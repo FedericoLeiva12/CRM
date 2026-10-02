@@ -40,11 +40,12 @@ services:
     security_opt: [no-new-privileges:true]
     restart: unless-stopped
   proxy:
-    image: caddy:2-alpine
+    build:
+      context: ./infra
+      dockerfile: Dockerfile.proxy
     environment:
       SITE_ADDRESS: ":80"
-    volumes:
-      - ./infra/Caddyfile.coolify:/etc/caddy/Caddyfile:ro
+    expose: ["80"]
     depends_on: [web, api]
     restart: unless-stopped
 volumes:
