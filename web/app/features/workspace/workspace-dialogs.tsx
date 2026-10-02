@@ -1,6 +1,6 @@
 import { Form } from '@remix-run/react';
 import { Modal } from '../../components/modal';
-import type { Agent, CRMRecord, ModalKind, Section } from '../../types/crm';
+import type { Agent, CRMRecord, ModalKind, Section, Viewer } from '../../types/crm';
 import { dialogPresentation } from './presentation';
 import {
   AgentInputs,
@@ -15,18 +15,47 @@ interface Props {
   editing: CRMRecord | null;
   revoke: Agent | null;
   section: Section;
+  viewer: Viewer;
   busy: boolean;
   error?: string;
   onClose: () => void;
 }
-export function WorkspaceDialogs({ modal, editing, revoke, section, busy, error, onClose }: Props) {
+export function WorkspaceDialogs({
+  modal,
+  editing,
+  revoke,
+  section,
+  viewer,
+  busy,
+  error,
+  onClose,
+}: Props) {
   if (!modal) return null;
   const presentation = dialogPresentation[modal];
   const title = modal === 'record' && editing ? 'Edit relationship' : presentation.title;
+  // The history has its own forms, and forms cannot nest. For an existing record it sits
+  // between the record form and the action buttons, which then submit the form by id.
+  const withHistory = modal === 'record' && editing !== null;
+  const formId = 'dialog-form';
+  const actions = (
+    <div className="modal-actions">
+      <button type="button" className="secondary" onClick={onClose}>
+        Cancel
+      </button>
+      <button
+        className={presentation.destructive ? 'danger' : 'primary'}
+        disabled={busy}
+        form={withHistory ? formId : undefined}
+      >
+        {busy ? 'Saving…' : presentation.submitLabel}
+      </button>
+    </div>
+  );
   return (
     <Modal
       title={title}
       open
+      wide={withHistory}
       onOpenChange={(open) => {
         if (!open) onClose();
       }}
@@ -36,13 +65,10 @@ export function WorkspaceDialogs({ modal, editing, revoke, section, busy, error,
           {error}
         </p>
       )}
-      <Form method="post" className="modal-form">
+      <Form method="post" className="modal-form" id={formId}>
         <input type="hidden" name="intent" value={presentation.intent} />
         <input type="hidden" name="section" value={section.id} />
         {modal === 'record' && <RecordFields fields={section.fields} record={editing} />}
-        {modal === 'record' && editing && (
-          <RecordHistory key={editing.id} sectionID={section.id} recordID={editing.id} />
-        )}
         {modal === 'field' && <CustomFieldInputs />}
         {modal === 'section' && <SectionInputs />}
         {modal === 'agent' && <AgentInputs />}
@@ -64,15 +90,17 @@ export function WorkspaceDialogs({ modal, editing, revoke, section, busy, error,
             </p>
           </>
         )}
-        <div className="modal-actions">
-          <button type="button" className="secondary" onClick={onClose}>
-            Cancel
-          </button>
-          <button className={presentation.destructive ? 'danger' : 'primary'} disabled={busy}>
-            {busy ? 'Saving…' : presentation.submitLabel}
-          </button>
-        </div>
+        {!withHistory && actions}
       </Form>
+      {withHistory && editing && (
+        <RecordHistory
+          key={editing.id}
+          sectionID={section.id}
+          recordID={editing.id}
+          viewer={viewer}
+        />
+      )}
+      {withHistory && actions}
     </Modal>
   );
 }

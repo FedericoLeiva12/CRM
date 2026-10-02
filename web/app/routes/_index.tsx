@@ -3,12 +3,13 @@ import {
   useActionData,
   useNavigation,
   useSearchParams,
+  useLocation,
   useRouteError,
   isRouteErrorResponse,
 } from '@remix-run/react';
 import { viewPresentation, actionMessages } from '../features/workspace/presentation';
 import { ChevronRight, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { workspaceLoader, workspaceAction } from '../features/workspace/workspace.server';
 import { Sidebar } from '../features/workspace/sidebar';
 import { RecordsView } from '../features/workspace/records-view';
@@ -17,6 +18,7 @@ import { AgentsView } from '../features/workspace/agents-view';
 import { TeamView } from '../features/workspace/team-view';
 import { WebhooksView } from '../features/workspace/webhooks-view';
 import { WorkspaceDialogs } from '../features/workspace/workspace-dialogs';
+import { MentionsBell } from '../features/workspace/mentions-bell';
 import type { Agent, CRMRecord, ModalKind } from '../types/crm';
 export const loader = workspaceLoader;
 export const action = workspaceAction;
@@ -32,11 +34,12 @@ export default function Workspace() {
     webhooks,
     deliveries,
     selectedWebhookId,
+    focusRecord,
     currentUser,
   } = useLoaderData<typeof loader>();
   const actionResult = useActionData<typeof action>();
   const navigation = useNavigation();
-  const [, setParams] = useSearchParams();
+  const [params, setParams] = useSearchParams();
   const [modal, setModal] = useState<ModalKind | null>(null);
   const [editing, setEditing] = useState<CRMRecord | null>(null);
   const [revoke, setRevoke] = useState<Agent | null>(null);
@@ -44,6 +47,15 @@ export default function Workspace() {
   const [inviteLink, setInviteLink] = useState('');
   const [webhookEditor, setWebhookEditor] = useState(false);
   const busy = navigation.state !== 'idle';
+  const location = useLocation();
+  const openedFor = useRef('');
+  useEffect(() => {
+    // One open per navigation: revalidation after a save keeps the key, a new link click changes it.
+    if (!focusRecord || openedFor.current === location.key) return;
+    openedFor.current = location.key;
+    setEditing(focusRecord);
+    setModal('record');
+  }, [focusRecord, location.key]);
   useEffect(() => {
     if (actionResult?.ok) {
       setModal(null);
@@ -60,6 +72,14 @@ export default function Workspace() {
     }
     if (presentation.actionModal === 'record') openRecord(null);
     else setModal(presentation.actionModal);
+  }
+  function closeModal() {
+    setModal(null);
+    if (params.has('record')) {
+      const next = new URLSearchParams(params);
+      next.delete('record');
+      setParams(next, { replace: true });
+    }
   }
   function openRecord(record: CRMRecord | null) {
     setEditing(record);
@@ -87,6 +107,7 @@ export default function Workspace() {
               <span className="status-dot" />
               Secure workspace
             </span>
+            <MentionsBell />
             <span className="profile" title={currentUser.email}>
               {initials(currentUser.name, currentUser.email)}
             </span>
@@ -190,9 +211,10 @@ export default function Workspace() {
         editing={editing}
         revoke={revoke}
         section={section}
+        viewer={{ id: currentUser.id, role: currentUser.role }}
         busy={busy}
         error={error}
-        onClose={() => setModal(null)}
+        onClose={closeModal}
       />
     </div>
   );

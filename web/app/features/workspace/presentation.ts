@@ -65,6 +65,7 @@ export const webhookEvents = [
   { id: 'section.created', label: 'Section created' },
   { id: 'field.created', label: 'Field created' },
   { id: 'timeline.entry_created', label: 'Timeline entry' },
+  { id: 'comment.mentioned', label: 'Comment mention' },
 ] as const;
 const extraEventLabels: Record<string, string> = { 'webhook.test': 'Test' };
 export function webhookEventLabel(eventType: string) {

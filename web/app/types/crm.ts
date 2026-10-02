@@ -25,6 +25,14 @@ export interface RecordLink {
 export interface ActivityAuthor {
   kind: 'user' | 'agent';
   id: string;
+  name?: string;
+  handle?: string;
+}
+export interface Principal {
+  kind: 'user' | 'agent';
+  id: string;
+  handle: string;
+  name?: string;
 }
 export interface Activity {
   id: string;
@@ -35,6 +43,31 @@ export interface Activity {
   ref?: string;
   author: ActivityAuthor;
   created_at: string;
+  parent_id?: string;
+  edited_at?: string;
+  deleted?: boolean;
+  mentions?: Principal[];
+}
+export interface MentionNotification {
+  id: string;
+  entry_id: string;
+  section_id: string;
+  section_name: string;
+  record_id: string;
+  record_name?: string;
+  parent_id?: string;
+  author: ActivityAuthor;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+export interface MentionCandidates {
+  users: Principal[];
+  agents: Principal[];
+}
+export interface Viewer {
+  id: string;
+  role: Role;
 }
 export interface RecordDetail extends CRMRecord {
   links: RecordLink[];
@@ -48,6 +81,7 @@ export interface Permission {
 export interface Agent {
   id: string;
   name: string;
+  handle: string;
   manage_schema: boolean;
   permissions: Permission[];
 }
@@ -56,6 +90,7 @@ export interface WorkspaceUser {
   id: string;
   email: string;
   name: string;
+  handle: string;
   role: Role;
   created_at: string;
 }

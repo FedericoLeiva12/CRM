@@ -28,6 +28,7 @@ const webhookEventIds = [
   'section.created',
   'field.created',
   'timeline.entry_created',
+  'comment.mentioned',
 ];
 function webhookBody(form: FormData) {
   return {
@@ -42,6 +43,21 @@ function webhookBody(form: FormData) {
     custom_header_value: textValue(form, 'custom_header_value'),
     clear_custom_header: checkedValue(form, 'clear_custom_header'),
   };
+}
+
+// A mention links to /?section=…&record=…, which opens that record's dialog.
+async function openedRecord(request: Request, sectionID: string, params: URLSearchParams) {
+  const recordID = params.get('record');
+  if (!recordID) return null;
+  try {
+    return await api<CRMRecord>(
+      request,
+      `/sections/${sectionID}/records/${encodeURIComponent(recordID)}`,
+    );
+  } catch (error) {
+    if (error instanceof Response) throw error;
+    return null;
+  }
 }
 
 export async function workspaceLoader({ request }: LoaderFunctionArgs) {
@@ -59,6 +75,8 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
       ? requestedView
       : 'records';
   if (view !== 'records' && currentUser.role !== 'admin') throw redirect('/');
+  const focusRecord =
+    view === 'records' && section ? await openedRecord(request, section.id, searchParams) : null;
   const webhooks = view === 'webhooks' ? await api<WebhookEndpoint[]>(request, '/webhooks') : [];
   const requestedEndpoint = searchParams.get('endpoint') || '';
   const selectedWebhook = webhooks.find((endpoint) => endpoint.id === requestedEndpoint);
@@ -84,6 +102,7 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
     webhooks,
     deliveries,
     selectedWebhookId: selectedWebhook?.id || '',
+    focusRecord,
     currentUser,
   });
 }
