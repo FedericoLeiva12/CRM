@@ -43,6 +43,7 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "sira-crm", Version: "1.0.0"}, nil)
 	handler.registerSchemaTool(server, agentID)
+	handler.registerMentionTools(server, agentID)
 	// Schema tools are registered from the current grant. The next request rebuilds the list,
 	// and AddTool emits notifications/tools/list_changed for a connected session.
 	if handler.repository.CanManageSchema(request.Context(), agentID) {
@@ -77,7 +78,7 @@ func unauthorized(writer http.ResponseWriter) {
 
 // Database details stay in server logs; validation messages can be safely shown to agents.
 func toolError(err error) error {
-	if err == nil || domain.IsValidationError(err) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrConflict) {
+	if err == nil || domain.IsValidationError(err) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrConflict) || errors.Is(err, store.ErrForbidden) {
 		return err
 	}
 	log.Printf("MCP operation failed: %v", err)

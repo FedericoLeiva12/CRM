@@ -27,6 +27,10 @@ func ValidateSection(identifier, name string) error {
 	if !identifierPattern.MatchString(identifier) || strings.TrimSpace(name) == "" || len(name) > 80 {
 		return Invalid("Use a valid identifier and section name")
 	}
+	// Per-section tools are named <section>_<verb>; this id would collide with the global mentions_* tools.
+	if identifier == "mentions" {
+		return Invalid("That section identifier is reserved")
+	}
 	return nil
 }
 func ValidateField(field Field) error {

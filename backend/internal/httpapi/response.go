@@ -43,6 +43,8 @@ func writeServiceError(writer http.ResponseWriter, err error) {
 		writeError(writer, http.StatusBadRequest, err.Error())
 	case errors.Is(err, store.ErrNotFound):
 		writeError(writer, http.StatusNotFound, err.Error())
+	case errors.Is(err, store.ErrForbidden):
+		writeError(writer, http.StatusForbidden, err.Error())
 	case errors.Is(err, store.ErrConflict):
 		writeError(writer, http.StatusConflict, err.Error())
 	default:

@@ -28,6 +28,7 @@ const (
 	EventSectionCreated       = "section.created"
 	EventFieldCreated         = "field.created"
 	EventTimelineEntryCreated = "timeline.entry_created"
+	EventCommentMentioned     = "comment.mentioned"
 	EventWebhookTest          = "webhook.test"
 )
 
@@ -67,6 +68,7 @@ func SubscribableEvents() []string {
 		EventSectionCreated,
 		EventFieldCreated,
 		EventTimelineEntryCreated,
+		EventCommentMentioned,
 	}
 }
 

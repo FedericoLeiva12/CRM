@@ -37,6 +37,7 @@ type Permission struct {
 type Agent struct {
 	ID           string       `json:"id"`
 	Name         string       `json:"name"`
+	Handle       string       `json:"handle"`
 	ManageSchema bool         `json:"manage_schema"`
 	Permissions  []Permission `json:"permissions"`
 }
@@ -54,6 +55,7 @@ type WorkspaceUser struct {
 	ID        string    `json:"id"`
 	Email     string    `json:"email"`
 	Name      string    `json:"name"`
+	Handle    string    `json:"handle"`
 	Role      string    `json:"role"`
 	CreatedAt time.Time `json:"created_at"`
 }
@@ -82,23 +84,31 @@ const (
 // MaxPageSize is the largest record page agents and the repository will return.
 const MaxPageSize = 500
 
-// Activity is one timeline entry. Type is an open string so a later comment
-// can be stored as type "comment" with an author, without a separate table.
+// Activity is one timeline entry. Type is an open string; a comment is type
+// "comment" and keeps its text in Summary. ParentID, EditedAt, Deleted, and
+// Mentions are set only on comments.
 type Activity struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"`
-	Date      time.Time `json:"date"`
-	Summary   string    `json:"summary"`
-	Channel   string    `json:"channel,omitempty"`
-	Ref       string    `json:"ref,omitempty"`
-	Author    Author    `json:"author"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        string      `json:"id"`
+	Type      string      `json:"type"`
+	Date      time.Time   `json:"date"`
+	Summary   string      `json:"summary"`
+	Channel   string      `json:"channel,omitempty"`
+	Ref       string      `json:"ref,omitempty"`
+	Author    Author      `json:"author"`
+	CreatedAt time.Time   `json:"created_at"`
+	ParentID  string      `json:"parent_id,omitempty"`
+	EditedAt  *time.Time  `json:"edited_at,omitempty"`
+	Deleted   bool        `json:"deleted,omitempty"`
+	Mentions  []Principal `json:"mentions,omitempty"`
 }
 
-// Author is the user or agent who appended a timeline entry.
+// Author is the user or agent who appended a timeline entry. Name and Handle
+// are filled when the account still exists.
 type Author struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
+	Kind   string `json:"kind"`
+	ID     string `json:"id"`
+	Name   string `json:"name,omitempty"`
+	Handle string `json:"handle,omitempty"`
 }
 
 // RecordLink is the other side of a generic record-to-record relationship.

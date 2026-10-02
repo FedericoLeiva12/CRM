@@ -56,6 +56,47 @@ func EmitTimelineEntry(ctx context.Context, tx pgx.Tx, actor, sectionID, recordI
 	return err
 }
 
+// CommentMention describes one mentioned principal on a comment.
+type CommentMention struct {
+	EntryID   string
+	ParentID  string
+	Body      string
+	Mentioned domain.Principal
+	Author    domain.Author
+}
+
+// EmitCommentMentioned writes one comment.mentioned event, for one mentioned user or agent,
+// to the outbox inside tx. Body is truncated to 500 characters.
+func EmitCommentMentioned(ctx context.Context, tx pgx.Tx, actor, sectionID, recordID string, mention CommentMention) error {
+	if sectionID == "" || recordID == "" || !validTimelineID(mention.EntryID) {
+		return domain.Invalid("Mention events require a section, record, and entry")
+	}
+	section, err := lookupSection(ctx, tx, sectionID)
+	if err != nil {
+		return err
+	}
+	var parentID any
+	if mention.ParentID != "" {
+		parentID = mention.ParentID
+	}
+	_, err = emit(ctx, tx, outboundEvent{
+		Type:      domain.EventCommentMentioned,
+		Actor:     actor,
+		SectionID: sectionID,
+		RecordID:  recordID,
+		Data: map[string]any{
+			"entry_id":  mention.EntryID,
+			"section":   section,
+			"record_id": recordID,
+			"mentioned": map[string]any{"kind": mention.Mentioned.Kind, "id": mention.Mentioned.ID, "handle": mention.Mentioned.Handle},
+			"author":    map[string]any{"kind": mention.Author.Kind, "id": mention.Author.ID, "name": mention.Author.Name, "handle": mention.Author.Handle},
+			"body":      clipText(mention.Body, 500),
+			"parent_id": parentID,
+		},
+	})
+	return err
+}
+
 func emitRecord(ctx context.Context, tx pgx.Tx, eventType, actor, sectionID, recordID string, previous, values map[string]any) (string, error) {
 	snapshot := values
 	if snapshot == nil {

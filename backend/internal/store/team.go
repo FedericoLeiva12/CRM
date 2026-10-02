@@ -13,7 +13,7 @@ import (
 const InviteLifetime = 7 * 24 * time.Hour
 
 func (repository *Repository) ListUsers(ctx context.Context) ([]domain.WorkspaceUser, error) {
-	rows, err := repository.pool.Query(ctx, "SELECT id,email,name,role,created_at FROM users ORDER BY created_at,email")
+	rows, err := repository.pool.Query(ctx, "SELECT id,email,name,handle,role,created_at FROM users ORDER BY created_at,email")
 	if err != nil {
 		return nil, err
 	}
@@ -21,7 +21,7 @@ func (repository *Repository) ListUsers(ctx context.Context) ([]domain.Workspace
 	users := []domain.WorkspaceUser{}
 	for rows.Next() {
 		var user domain.WorkspaceUser
-		if err = rows.Scan(&user.ID, &user.Email, &user.Name, &user.Role, &user.CreatedAt); err != nil {
+		if err = rows.Scan(&user.ID, &user.Email, &user.Name, &user.Handle, &user.Role, &user.CreatedAt); err != nil {
 			return nil, err
 		}
 		users = append(users, user)
@@ -30,7 +30,7 @@ func (repository *Repository) ListUsers(ctx context.Context) ([]domain.Workspace
 }
 func (repository *Repository) UserByID(ctx context.Context, userID string) (domain.WorkspaceUser, error) {
 	var user domain.WorkspaceUser
-	err := repository.pool.QueryRow(ctx, "SELECT id,email,name,role,created_at FROM users WHERE id=$1", userID).Scan(&user.ID, &user.Email, &user.Name, &user.Role, &user.CreatedAt)
+	err := repository.pool.QueryRow(ctx, "SELECT id,email,name,handle,role,created_at FROM users WHERE id=$1", userID).Scan(&user.ID, &user.Email, &user.Name, &user.Handle, &user.Role, &user.CreatedAt)
 	return user, classifyMissingRow(err)
 }
 func (repository *Repository) ListInvites(ctx context.Context) ([]domain.Invite, error) {

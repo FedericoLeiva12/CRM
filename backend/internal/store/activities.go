@@ -59,6 +59,11 @@ func (repository *Repository) LogActivity(ctx context.Context, actor, sectionID,
 	if err != nil {
 		return domain.Activity{}, err
 	}
+	if strings.TrimSpace(activityType) == domain.CommentType {
+		// A comment logged as an activity is still a comment: mentions, notifications, and events apply.
+		activity, _, err := repository.createComment(ctx, actor, sectionID, recordID, commentInput{Body: summary, OccurredAt: occurredAt, Channel: channel, Ref: ref, AuditAction: "log_activity"})
+		return activity, err
+	}
 	author, err := authorFromActor(actor)
 	if err != nil {
 		return domain.Activity{}, err
@@ -93,24 +98,28 @@ func (repository *Repository) LogActivity(ctx context.Context, actor, sectionID,
 	return activity, nil
 }
 
+// ListActivities returns the whole timeline, comments and replies included, newest first.
 func (repository *Repository) ListActivities(ctx context.Context, sectionID, recordID string) ([]domain.Activity, error) {
 	var exists bool
 	if err := repository.pool.QueryRow(ctx, "SELECT true FROM records WHERE section_id=$1 AND id=$2", sectionID, recordID).Scan(&exists); err != nil {
 		return nil, classifyMissingRow(err)
 	}
-	rows, err := repository.pool.Query(ctx, `SELECT id,type,occurred_at,summary,COALESCE(channel,''),COALESCE(ref,''),author_kind,author_id,created_at
-		FROM activities WHERE section_id=$1 AND record_id=$2 ORDER BY occurred_at DESC, created_at DESC, id DESC`, sectionID, recordID)
+	rows, err := repository.pool.Query(ctx, "SELECT "+activityColumns+" "+activityFrom+" WHERE a.section_id=$1 AND a.record_id=$2 ORDER BY a.occurred_at DESC, a.created_at DESC, a.id DESC", sectionID, recordID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	activities := []domain.Activity{}
 	for rows.Next() {
-		var activity domain.Activity
-		if err = rows.Scan(&activity.ID, &activity.Type, &activity.Date, &activity.Summary, &activity.Channel, &activity.Ref, &activity.Author.Kind, &activity.Author.ID, &activity.CreatedAt); err != nil {
+		activity, err := scanActivity(rows)
+		if err != nil {
 			return nil, err
 		}
 		activities = append(activities, activity)
 	}
-	return activities, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	return activities, attachMentions(ctx, repository.pool, activities)
 }

@@ -41,7 +41,7 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("Migration replay failed", err)
 	}
 	var migrationCount int
-	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 5 {
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 6 {
 		t.Fatal("Migration was not tracked exactly once", migrationCount, err)
 	}
 	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("a-long-test-password"), bcrypt.MinCost)

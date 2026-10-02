@@ -95,6 +95,7 @@ func (handler *Handler) registerReadTools(server *mcp.Server, agentID string, se
 		activities, err := handler.repository.ListActivities(ctx, section.ID, arguments.ID)
 		return nil, map[string]any{"activities": activities}, toolError(err)
 	})
+	handler.registerCommentReadTool(server, agentID, section)
 }
 
 func (handler *Handler) registerRecordWriteTools(server *mcp.Server, agentID string, section domain.Section) {
@@ -112,6 +113,7 @@ func (handler *Handler) registerRecordWriteTools(server *mcp.Server, agentID str
 		activity, err := handler.repository.LogActivity(ctx, "agent:"+agentID, section.ID, arguments.ID, arguments.Type, arguments.Date, arguments.Summary, arguments.Channel, arguments.Ref)
 		return nil, activity, toolError(err)
 	})
+	handler.registerCommentWriteTool(server, agentID, section)
 }
 
 func (handler *Handler) registerConvertTool(server *mcp.Server, agentID string, section domain.Section) {

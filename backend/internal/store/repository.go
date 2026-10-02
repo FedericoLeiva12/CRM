@@ -11,6 +11,7 @@ import (
 
 var ErrNotFound = errors.New("resource does not exist")
 var ErrConflict = errors.New("resource already exists or was changed elsewhere")
+var ErrForbidden = errors.New("you are not allowed to do this")
 
 type Repository struct{ pool *pgxpool.Pool }
 

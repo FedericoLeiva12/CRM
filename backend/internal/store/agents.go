@@ -35,14 +35,14 @@ func (repository *Repository) CanManageSchema(ctx context.Context, agentID strin
 	return allowed
 }
 func (repository *Repository) ListAgents(ctx context.Context) ([]domain.Agent, error) {
-	rows, err := repository.pool.Query(ctx, "SELECT id,name,can_manage_schema FROM agents ORDER BY created_at")
+	rows, err := repository.pool.Query(ctx, "SELECT id,name,handle,can_manage_schema FROM agents ORDER BY created_at")
 	if err != nil {
 		return nil, err
 	}
 	agents := []domain.Agent{}
 	for rows.Next() {
 		var agent domain.Agent
-		if err = rows.Scan(&agent.ID, &agent.Name, &agent.ManageSchema); err != nil {
+		if err = rows.Scan(&agent.ID, &agent.Name, &agent.Handle, &agent.ManageSchema); err != nil {
 			rows.Close()
 			return nil, err
 		}
