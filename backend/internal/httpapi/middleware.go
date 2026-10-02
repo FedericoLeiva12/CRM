@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"siracrm/internal/domain"
 	"siracrm/internal/store"
 )
 
@@ -11,9 +12,18 @@ type contextKey int
 
 const authenticatedUserKey contextKey = 0
 
+type principal struct {
+	id   string
+	role string
+}
+
 func userID(request *http.Request) string {
-	identifier, _ := request.Context().Value(authenticatedUserKey).(string)
-	return identifier
+	current, _ := request.Context().Value(authenticatedUserKey).(principal)
+	return current.id
+}
+func userRole(request *http.Request) string {
+	current, _ := request.Context().Value(authenticatedUserKey).(principal)
+	return current.role
 }
 func (server *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
@@ -22,7 +32,7 @@ func (server *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			writeError(writer, http.StatusUnauthorized, "Sign in required")
 			return
 		}
-		identifier, err := server.authentication.SessionUser(request.Context(), cookie.Value)
+		identity, err := server.authentication.SessionUser(request.Context(), cookie.Value)
 		if errors.Is(err, store.ErrNotFound) {
 			writeError(writer, http.StatusUnauthorized, "Sign in required")
 			return
@@ -31,8 +41,17 @@ func (server *Server) requireSession(next http.HandlerFunc) http.HandlerFunc {
 			writeServiceError(writer, err)
 			return
 		}
-		next(writer, request.WithContext(context.WithValue(request.Context(), authenticatedUserKey, identifier)))
+		next(writer, request.WithContext(context.WithValue(request.Context(), authenticatedUserKey, principal{id: identity.UserID, role: identity.Role})))
 	}
+}
+func (server *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
+	return server.requireSession(func(writer http.ResponseWriter, request *http.Request) {
+		if userRole(request) != domain.RoleAdmin {
+			writeError(writer, http.StatusForbidden, "Administrator access required")
+			return
+		}
+		next(writer, request)
+	})
 }
 func (server *Server) checkOrigin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {

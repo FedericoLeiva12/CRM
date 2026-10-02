@@ -41,6 +41,36 @@ type Agent struct {
 	Permissions  []Permission `json:"permissions"`
 }
 
+const (
+	RoleAdmin  = "admin"
+	RoleMember = "member"
+)
+
+func ValidRole(role string) bool {
+	return role == RoleAdmin || role == RoleMember
+}
+
+type WorkspaceUser struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Name      string    `json:"name"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+type Invite struct {
+	ID        string    `json:"id"`
+	Email     string    `json:"email"`
+	Role      string    `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// CreatedInvite is returned once. Token is the secret path segment; only its hash is stored.
+type CreatedInvite struct {
+	Invite
+	Token string `json:"token"`
+}
+
 // Access distinguishes independent read and write grants; write does not imply read.
 type Access int
 

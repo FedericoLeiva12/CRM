@@ -9,6 +9,13 @@ export function viewPresentation(view: WorkspaceView, section: Section) {
       actionLabel: 'Connect agent',
       actionModal: 'agent' as ModalKind,
     };
+  if (view === 'team')
+    return {
+      title: 'Team',
+      description: 'Invite people and choose what they can manage.',
+      actionLabel: '',
+      actionModal: 'record' as ModalKind,
+    };
   if (view === 'fields')
     return {
       title: 'Fields & sections',
@@ -33,7 +40,14 @@ export const actionMessages: Record<string, string> = {
   section: 'Section created.',
   delete: 'Record deleted.',
   revoke: 'Agent revoked.',
+  invite: 'Invitation link created.',
+  'revoke-invite': 'Invitation revoked.',
+  role: 'Role updated.',
+  'remove-user': 'Person removed.',
 };
+export function roleLabel(role: string) {
+  return role === 'admin' ? 'Administrator' : 'Member';
+}
 export const dialogPresentation: Record<
   ModalKind,
   { title: string; submitLabel: string; intent: string; destructive: boolean }

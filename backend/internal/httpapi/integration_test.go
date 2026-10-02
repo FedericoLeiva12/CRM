@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/bcrypt"
 	"siracrm/internal/auth"
+	"siracrm/internal/auth/token"
 	"siracrm/internal/config"
 	"siracrm/internal/database"
 	"siracrm/internal/domain"
@@ -40,7 +41,7 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("Migration replay failed", err)
 	}
 	var migrationCount int
-	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 2 {
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 3 {
 		t.Fatal("Migration was not tracked exactly once", migrationCount, err)
 	}
 	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("a-long-test-password"), bcrypt.MinCost)
@@ -242,4 +243,175 @@ func TestIntegration(t *testing.T) {
 	cookie = sessionCookie.Name + "=" + sessionCookie.Value
 	expect(call("POST", "/api/logout", nil, true), 200)
 	expect(call("GET", "/api/sections", nil, true), 401)
+}
+
+func TestTeamInvitations(t *testing.T) {
+	url := os.Getenv("TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("Set TEST_DATABASE_URL to an isolated PostgreSQL database")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if _, err = pool.Exec(ctx, "DROP SCHEMA public CASCADE; CREATE SCHEMA public"); err != nil {
+		t.Fatal(err)
+	}
+	if err = database.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("a-long-test-password"), bcrypt.MinCost)
+	if _, err = pool.Exec(ctx, "INSERT INTO users(id,email,password_hash) VALUES('admin','admin@example.test',$1)", string(passwordHash)); err != nil {
+		t.Fatal(err)
+	}
+	var role string
+	if err = pool.QueryRow(ctx, "SELECT role FROM users WHERE id='admin'").Scan(&role); err != nil || role != domain.RoleAdmin {
+		t.Fatal("Existing administrator was not kept as admin", role, err)
+	}
+	settings := config.Config{AppOrigin: "https://crm.example.test", SecureCookies: true}
+	repository := store.New(pool)
+	handler := New(repository, auth.New(repository), settings).Handler()
+	adminCookie := ""
+	callAs := func(method, path, cookie string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		request := httptest.NewRequest(method, path, bytes.NewReader(raw))
+		request.Header.Set("Origin", settings.AppOrigin)
+		request.Header.Set("Content-Type", "application/json")
+		if cookie != "" {
+			request.Header.Set("Cookie", cookie)
+		}
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		return response
+	}
+	expect := func(response *httptest.ResponseRecorder, status int) {
+		t.Helper()
+		if response.Code != status {
+			t.Fatalf("Expected %d, got %d: %s", status, response.Code, response.Body.String())
+		}
+	}
+	mustContain := func(response *httptest.ResponseRecorder, text string) {
+		t.Helper()
+		if !strings.Contains(response.Body.String(), text) {
+			t.Fatalf("Expected %q in %s", text, response.Body.String())
+		}
+	}
+	login := func(email, password string) string {
+		t.Helper()
+		response := callAs("POST", "/api/login", "", map[string]string{"email": email, "password": password})
+		expect(response, 200)
+		return response.Result().Cookies()[0].Name + "=" + response.Result().Cookies()[0].Value
+	}
+	adminCookie = login("admin@example.test", "a-long-test-password")
+	expect(callAs("POST", "/api/invites", "", map[string]string{"email": "person@example.test", "role": "member"}), 401)
+	response := callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "person@example.test", "role": "member"})
+	expect(response, 201)
+	var created map[string]string
+	json.Unmarshal(response.Body.Bytes(), &created)
+	inviteToken := created["token"]
+	if inviteToken == "" || created["link"] != settings.AppOrigin+"/invite/"+inviteToken {
+		t.Fatal("Invite link was not returned once", response.Body.String())
+	}
+	var storedHash string
+	if err = pool.QueryRow(ctx, "SELECT token_hash FROM invites WHERE email='person@example.test'").Scan(&storedHash); err != nil || storedHash == inviteToken || storedHash != token.Hash(inviteToken) {
+		t.Fatal("Invite token was not stored as a hash", storedHash, err)
+	}
+	listed := callAs("GET", "/api/invites", adminCookie, nil)
+	expect(listed, 200)
+	if strings.Contains(listed.Body.String(), inviteToken) {
+		t.Fatal("Pending invite list exposed the token")
+	}
+	duplicate := callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "person@example.test", "role": "admin"})
+	expect(duplicate, 400)
+	mustContain(duplicate, "An invitation for this email is already pending")
+	preview := callAs("GET", "/api/invite/"+inviteToken, "", nil)
+	expect(preview, 200)
+	mustContain(preview, "person@example.test")
+	accepted := callAs("POST", "/api/invite/"+inviteToken, "", map[string]string{"name": "Nia Cole", "password": "short"})
+	expect(accepted, 400)
+	mustContain(accepted, "Password must be 14–72 bytes")
+	accepted = callAs("POST", "/api/invite/"+inviteToken, "", map[string]string{"name": "Nia Cole", "password": "member-long-password"})
+	expect(accepted, 201)
+	memberCookie := accepted.Result().Cookies()[0].Name + "=" + accepted.Result().Cookies()[0].Value
+	if !accepted.Result().Cookies()[0].HttpOnly || accepted.Result().Cookies()[0].SameSite != http.SameSiteStrictMode {
+		t.Fatal("Invite acceptance did not sign the person in")
+	}
+	expect(callAs("GET", "/api/sections", memberCookie, nil), 200)
+	memberProfile := callAs("GET", "/api/me", memberCookie, nil)
+	expect(memberProfile, 200)
+	mustContain(memberProfile, `"role":"member"`)
+	again := callAs("POST", "/api/invite/"+inviteToken, "", map[string]string{"name": "Nia Cole", "password": "member-long-password"})
+	expect(again, 404)
+	mustContain(again, "This invitation is no longer valid")
+	response = callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "person@example.test", "role": "member"})
+	expect(response, 400)
+	mustContain(response, "An account with this email already exists")
+	response = callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "later@example.test", "role": "member"})
+	expect(response, 201)
+	json.Unmarshal(response.Body.Bytes(), &created)
+	revokedToken := created["token"]
+	expect(callAs("DELETE", "/api/invites/"+created["id"], adminCookie, nil), 200)
+	expect(callAs("POST", "/api/invite/"+revokedToken, "", map[string]string{"name": "Later Person", "password": "member-long-password"}), 404)
+	response = callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "stale@example.test", "role": "admin"})
+	expect(response, 201)
+	json.Unmarshal(response.Body.Bytes(), &created)
+	if _, err = pool.Exec(ctx, "UPDATE invites SET expires_at=now()-interval '1 minute' WHERE id=$1", created["id"]); err != nil {
+		t.Fatal(err)
+	}
+	expiredToken := created["token"]
+	expired := callAs("POST", "/api/invite/"+expiredToken, "", map[string]string{"name": "Stale Person", "password": "member-long-password"})
+	expect(expired, 400)
+	mustContain(expired, "This invitation has expired")
+	replacement := callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "stale@example.test", "role": "member"})
+	expect(replacement, 201)
+	var replaced map[string]string
+	json.Unmarshal(replacement.Body.Bytes(), &replaced)
+	if replaced["token"] == "" || replaced["token"] == expiredToken {
+		t.Fatal("Expired invitation was not replaced")
+	}
+	expect(callAs("POST", "/api/invite/"+expiredToken, "", map[string]string{"name": "Stale Person", "password": "member-long-password"}), 404)
+	for _, forbidden := range []struct {
+		method, path string
+		body         any
+	}{
+		{"POST", "/api/sections", map[string]string{"id": "vendors", "name": "Vendors"}},
+		{"POST", "/api/sections/clients/fields", map[string]any{"id": "region", "label": "Region", "type": "text"}},
+		{"GET", "/api/agents", nil},
+		{"POST", "/api/agents", map[string]string{"name": "Member agent"}},
+		{"GET", "/api/users", nil},
+		{"POST", "/api/invites", map[string]string{"email": "other@example.test", "role": "member"}},
+		{"PUT", "/api/users/admin/role", map[string]string{"role": "member"}},
+		{"DELETE", "/api/users/admin", nil},
+	} {
+		denied := callAs(forbidden.method, forbidden.path, memberCookie, forbidden.body)
+		expect(denied, 403)
+		mustContain(denied, "Administrator access required")
+	}
+	expect(callAs("POST", "/api/sections/clients/records", memberCookie, map[string]any{"data": map[string]any{"name": "Member Record"}}), 200)
+	demote := callAs("PUT", "/api/users/admin/role", adminCookie, map[string]string{"role": "member"})
+	expect(demote, 400)
+	mustContain(demote, "The workspace must keep one administrator")
+	selfRemove := callAs("DELETE", "/api/users/admin", adminCookie, nil)
+	expect(selfRemove, 400)
+	mustContain(selfRemove, "You cannot remove your own account")
+	response = callAs("POST", "/api/invites", adminCookie, map[string]string{"email": "second@example.test", "role": "admin"})
+	expect(response, 201)
+	json.Unmarshal(response.Body.Bytes(), &created)
+	accepted = callAs("POST", "/api/invite/"+created["token"], "", map[string]string{"name": "Second Admin", "password": "second-long-password"})
+	expect(accepted, 201)
+	secondCookie := accepted.Result().Cookies()[0].Name + "=" + accepted.Result().Cookies()[0].Value
+	var secondID string
+	if err = pool.QueryRow(ctx, "SELECT id FROM users WHERE email='second@example.test'").Scan(&secondID); err != nil {
+		t.Fatal(err)
+	}
+	expect(callAs("DELETE", "/api/users/"+secondID, adminCookie, nil), 200)
+	expect(callAs("GET", "/api/sections", secondCookie, nil), 401)
+	expect(callAs("GET", "/api/me", adminCookie, nil), 200)
+	var audits int
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM audit WHERE action IN ('invite_create','invite_revoke','invite_accept','user_role','user_remove')").Scan(&audits); err != nil || audits < 5 {
+		t.Fatal("User and invite auditing missing", audits, err)
+	}
 }

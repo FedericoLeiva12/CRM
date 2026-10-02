@@ -26,7 +26,26 @@ export interface Agent {
   manage_schema: boolean;
   permissions: Permission[];
 }
-export type WorkspaceView = 'records' | 'fields' | 'agents';
+export type Role = 'admin' | 'member';
+export interface WorkspaceUser {
+  id: string;
+  email: string;
+  name: string;
+  role: Role;
+  created_at: string;
+}
+export interface Invite {
+  id: string;
+  email: string;
+  role: Role;
+  created_at: string;
+  expires_at: string;
+}
+export interface CreatedInvite extends Invite {
+  token: string;
+  link: string;
+}
+export type WorkspaceView = 'records' | 'fields' | 'agents' | 'team';
 export type ModalKind = 'record' | 'field' | 'section' | 'agent' | 'delete' | 'revoke' | 'password';
 export interface CreatedAgent {
   id: string;

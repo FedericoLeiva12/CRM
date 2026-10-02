@@ -8,6 +8,7 @@ import {
   Plus,
   Settings2,
   ShieldCheck,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import type { ModalKind, Section, WorkspaceView } from '../../types/crm';
@@ -15,9 +16,10 @@ interface Props {
   sections: Section[];
   section: Section;
   view: WorkspaceView;
+  admin: boolean;
   onOpenModal: (modal: ModalKind) => void;
 }
-export function Sidebar({ sections, section, view, onOpenModal }: Props) {
+export function Sidebar({ sections, section, view, admin, onOpenModal }: Props) {
   return (
     <aside className="sidebar">
       <Link to="/" className="brand">
@@ -48,20 +50,32 @@ export function Sidebar({ sections, section, view, onOpenModal }: Props) {
             <span>{s.name}</span>
           </Link>
         ))}
-        <button className="nav-item add-section" onClick={() => onOpenModal('section')}>
-          <Plus size={17} />
-          Add section
-        </button>
+        {admin && (
+          <button className="nav-item add-section" onClick={() => onOpenModal('section')}>
+            <Plus size={17} />
+            Add section
+          </button>
+        )}
       </nav>
       <div className="nav-label settings-label">CONTROL CENTER</div>
-      <Link to="/?view=fields" className={`nav-item ${view === 'fields' ? 'active' : ''}`}>
-        <Settings2 size={18} />
-        Fields & sections
-      </Link>
-      <Link to="/?view=agents" className={`nav-item ${view === 'agents' ? 'active' : ''}`}>
-        <Bot size={18} />
-        Agent access
-      </Link>
+      {admin && (
+        <Link to="/?view=fields" className={`nav-item ${view === 'fields' ? 'active' : ''}`}>
+          <Settings2 size={18} />
+          Fields & sections
+        </Link>
+      )}
+      {admin && (
+        <Link to="/?view=agents" className={`nav-item ${view === 'agents' ? 'active' : ''}`}>
+          <Bot size={18} />
+          Agent access
+        </Link>
+      )}
+      {admin && (
+        <Link to="/?view=team" className={`nav-item ${view === 'team' ? 'active' : ''}`}>
+          <UserPlus size={18} />
+          Team
+        </Link>
+      )}
       <button className="nav-item" onClick={() => onOpenModal('password')}>
         <ShieldCheck size={18} />
         Account security

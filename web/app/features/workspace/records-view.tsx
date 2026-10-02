@@ -15,11 +15,19 @@ import type { CRMRecord, Section } from '../../types/crm';
 interface Props {
   section: Section;
   records: CRMRecord[];
+  canManage: boolean;
   onOpenRecord: (record: CRMRecord | null) => void;
   onAddField: () => void;
   onDeleteRecord: (record: CRMRecord) => void;
 }
-export function RecordsView({ section, records, onOpenRecord, onAddField, onDeleteRecord }: Props) {
+export function RecordsView({
+  section,
+  records,
+  canManage,
+  onOpenRecord,
+  onAddField,
+  onDeleteRecord,
+}: Props) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const statuses = Array.from(
@@ -63,9 +71,13 @@ export function RecordsView({ section, records, onOpenRecord, onAddField, onDele
           <p>
             A place for every detail.
             <br />
-            <button onClick={() => onAddField()}>
-              Customize your fields <ArrowUpRight size={14} />
-            </button>
+            {canManage ? (
+              <button onClick={() => onAddField()}>
+                Customize your fields <ArrowUpRight size={14} />
+              </button>
+            ) : (
+              <span>Your team keeps these details together.</span>
+            )}
           </p>
         </div>
       </div>
@@ -94,10 +106,12 @@ export function RecordsView({ section, records, onOpenRecord, onAddField, onDele
               onChange={(event) => setSearch(event.target.value)}
             />
           </label>
-          <button className="secondary" onClick={() => onAddField()}>
-            <Settings2 size={16} />
-            <span>Fields</span>
-          </button>
+          {canManage && (
+            <button className="secondary" onClick={() => onAddField()}>
+              <Settings2 size={16} />
+              <span>Fields</span>
+            </button>
+          )}
         </div>
       </div>
       <div className="table-wrap">
@@ -170,13 +184,15 @@ export function RecordsView({ section, records, onOpenRecord, onAddField, onDele
           Saved in your workspace
         </span>
       </div>
-      <div className="bottom-note">
-        <CircleHelp size={17} />
-        <span>Make it yours. Add custom fields for the details your team tracks.</span>
-        <button onClick={() => onAddField()}>
-          Manage fields <ArrowUpRight size={14} />
-        </button>
-      </div>
+      {canManage && (
+        <div className="bottom-note">
+          <CircleHelp size={17} />
+          <span>Make it yours. Add custom fields for the details your team tracks.</span>
+          <button onClick={() => onAddField()}>
+            Manage fields <ArrowUpRight size={14} />
+          </button>
+        </div>
+      )}
     </>
   );
 }

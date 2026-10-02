@@ -8,11 +8,11 @@ The backend uses idiomatic Go `cmd/` and `internal/` packages. `cmd/server` comp
 
 `domain` owns CRM models, field type constants and validation. It imports only the standard library and knows nothing about HTTP, MCP or PostgreSQL. User-facing validation failures have a specific error type.
 
-`store` owns SQL and transactional invariants, grouped into sections, records, agents and accounts. It maps database conflicts and missing rows to stable errors. Record saves lock the section while loading its schema and validating values; adding a required field takes the same lock. A write and its audit event commit together. Password replacement uses compare-and-swap and revokes all sessions in the same transaction.
+`store` owns SQL and transactional invariants, grouped into sections, records, agents, accounts, and team. It maps database conflicts and missing rows to stable errors. Record saves lock the section while loading its schema and validating values; adding a required field takes the same lock. A write and its audit event commit together. Password replacement uses compare-and-swap and revokes all sessions in the same transaction. Removing a user deletes that account, and session rows cascade with it. Role changes lock administrator rows so the workspace cannot lose its last administrator.
 
 `auth` orchestrates password verification, credential generation, server-side sessions and bounded login throttling. `auth/token` is an independent utility package used for hashes and random identifiers; it does not depend on the authentication service.
 
-`httpapi` translates typed request bodies into service/repository calls. The route registry declares session requirements explicitly. Middleware validates browser origins and authenticates sessions; handlers receive the authenticated user identity through a typed context key. Error handling returns safe validation messages while logging unexpected database errors only on the server.
+`httpapi` translates typed request bodies into service/repository calls. The route registry declares session and administrator requirements explicitly. Middleware validates browser origins and authenticates sessions; handlers receive the authenticated user identity and role through a typed context key. Error handling returns safe validation messages while logging unexpected database errors only on the server. Invitation preview and acceptance are the only unauthenticated account routes besides login.
 
 `mcpserver` independently authenticates agent tokens, derives discovery from the current section registry and grants, then invokes the same repository and validation as HTTP. It never imports HTTP handlers. Discovery is not authorization: each tool checks access again at invocation. Database failures deny access. Read, write, and schema-management grants are independent. Schema management defaults to denied and does not grant record access on sections the agent creates.
 
@@ -31,9 +31,9 @@ The repository remains a concrete PostgreSQL adapter because the current integra
 
 ## Frontend boundaries
 
-Remix routes compose feature views and expose loader/action exports. The server-only `workspace.server.ts` module handles browser mutations, typed API calls and form conversion. API cookies stay in server calls; database credentials never reach browser code.
+Remix routes compose feature views and expose loader/action exports. The server-only `workspace.server.ts` module handles browser mutations, typed API calls and form conversion. `invite.$token.tsx` accepts an invitation without an existing session. API cookies stay in server calls; database credentials never reach browser code.
 
-Workspace presentation is split into `records-view`, `fields-view`, `agents-view`, `sidebar`, `workspace-dialogs`, and small editor/cell components. Presentation maps replace repeated nested conditional labels. Records-view owns search/filter state and is keyed by section, which resets those controls when navigation changes the section.
+Workspace presentation is split into `records-view`, `fields-view`, `agents-view`, `team-view`, `sidebar`, `workspace-dialogs`, and small editor/cell components. Presentation maps replace repeated nested conditional labels. Records-view owns search/filter state and is keyed by section, which resets those controls when navigation changes the section. Administrator navigation is hidden for members; the API still enforces the role.
 
 Shared Radix dialog and permission checkbox components stay in `components`. CRM request/response shapes and field types live in `types/crm.ts`. API response types describe the trusted Go service boundary; Go performs authoritative validation on every write.
 
@@ -47,7 +47,7 @@ Shared Radix dialog and permission checkbox components stay in `components`. CRM
 - `make check` runs backend lint/vet/tests and frontend lint/format/typecheck/production build.
 - CI runs the same linters and builds, and provides an isolated PostgreSQL database for integration tests.
 
-The integration test intentionally recreates the public schema. Set `TEST_DATABASE_URL` only to an isolated disposable database. Unit tests cover domain validation, secure origin configuration and limiter limits/expiry. Integration tests cover browser authentication, CSRF, password changes, session revocation, registry changes, dynamic fields, MCP grant isolation, token revocation and transactional audit events.
+The integration test intentionally recreates the public schema. Set `TEST_DATABASE_URL` only to an isolated disposable database. Unit tests cover domain validation, secure origin configuration and limiter limits/expiry. Integration tests cover browser authentication, CSRF, password changes, session revocation, registry changes, dynamic fields, MCP grant isolation, token revocation, invitations, member restrictions, last-administrator protection, and transactional audit events.
 
 Prefer descriptive names and small functions with a clear responsibility. Comments explain security boundaries, concurrency rules or non-obvious decisions; they should not narrate what a straightforward assignment or loop already says. Keep transport-specific logic out of domain and persistence packages. Add meaningful regression tests when changing authorization or transactional behavior.
 

@@ -8,6 +8,7 @@ An extensible, single-workspace CRM with a Go API, PostgreSQL, Remix v2, Tailwin
 - Add sections from the UI, such as Employees, without changing code.
 - Section-specific custom text, email, number, date and boolean fields, validated by the same backend for browser and agent writes.
 - Administrator sign-in, bcrypt cost 12, opaque hashed session tokens, HttpOnly/SameSite cookies, HTTPS-only production cookies, origin checks, login throttling, password changes and session revocation.
+- Team invitations by one-time link. Administrators manage people and roles. Members can view and edit records in every section.
 - One-time agent token display, hashed tokens at rest, independent read/write grants per section and immediate token revocation on subsequent requests.
 - New sections automatically appear in permission settings and MCP discovery. All new permissions default to denied.
 - Record mutations are transactionally audited, with agent identity recorded.
@@ -33,7 +34,7 @@ curl --fail https://your-domain/healthz
 
 Caddy provisions and renews certificates for public domains. PostgreSQL and the API are not published to the host. The browser talks to Remix, whose loaders/actions call the private API. Caddy routes `/mcp` to Go. All administrator capabilities require a browser session; agent tokens cannot access them.
 
-`ADMIN_EMAIL` / `ADMIN_PASSWORD` only create the first administrator when the users table is empty. Changing those environment variables does not reset a password. Change the password under **Account security**, which invalidates all browser sessions. There is no public signup, email password recovery or team invitation flow in this version. All human accounts are workspace administrators; fine-grained permissions currently apply to agents.
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` only create the first administrator when the users table is empty. That account stays an administrator. Changing those environment variables does not reset a password. Change the password under **Account security**, which invalidates all browser sessions. There is no public signup or email password recovery. Further people join only through an invitation.
 
 For a local Compose deployment, set `SITE_ADDRESS=http://localhost` and `APP_ORIGIN=http://localhost`. This uses port 80 and disables Secure cookies for local HTTP. Never use this configuration for a public host.
 
@@ -73,6 +74,12 @@ npm run dev
 ```
 
 Open http://localhost:3000. Versioned schema migrations are bundled into the Go binary and applied once under a transaction-scoped advisory lock. Production starts with empty records; test or demo data are never seeded into your deployment.
+
+## Team
+
+Administrators open **Team**, enter an email and a role, and receive a one-time link such as `https://your-domain/invite/sira_inv_…`. Copy it then; only a SHA-256 hash is stored, and Sira does not send email. The link expires after 7 days, works once, and can be revoked while it is pending. Inviting an address again replaces an expired invitation. The invitee chooses a name and a password (14–72 bytes) and is signed in.
+
+**Administrator** can do everything in the workspace, including team management, agent tokens, and sections and fields. **Member** can view and edit records in every section. The API rejects member calls to administrator routes. The workspace must keep one administrator, and nobody can remove their own account. Removing someone else ends their sessions immediately. User and invite changes are audited.
 
 ## Connect an MCP client
 
@@ -136,15 +143,15 @@ backend/
     httpapi/                 # Routes, middleware and small HTTP handlers
     mcpserver/               # Authenticated MCP transport and dynamic tools
 web/app/
-  routes/                    # Remix route composition and sign-in
-  features/workspace/        # Records, fields, agents, editors and server actions
+  routes/                    # Remix route composition, sign-in and invitation acceptance
+  features/workspace/        # Records, fields, agents, team, editors and server actions
   components/                # Shared accessible Radix controls
   types/                     # Typed CRM transport models
 ```
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) for dependency boundaries, extension guidelines and quality tooling.
 
-The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed.
+The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection.
 
 ## Verify
 

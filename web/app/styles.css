@@ -850,6 +850,65 @@ tbody tr:hover {
   margin: 16px 0;
   font-size: 13px;
 }
+.token-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.invite-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 190px auto;
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 28px;
+}
+.invite-form button {
+  min-height: 44px;
+}
+.team-panel {
+  border: 1px solid #dfe7e1;
+  border-radius: 8px;
+  background: white;
+  padding: 8px 24px 12px;
+  margin-bottom: 22px;
+}
+.team-empty {
+  color: #526c58;
+  padding: 8px 0 16px;
+  line-height: 1.6;
+}
+.person-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 0;
+  border-top: 1px solid #e3e9e4;
+}
+.person-meta {
+  min-width: 0;
+}
+.person-meta b,
+.person-meta span,
+.person-meta small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.person-meta span,
+.person-meta small {
+  color: #526c58;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.role-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.role-form select {
+  width: 170px;
+  margin-top: 0;
+}
 .login {
   min-height: 100vh;
   display: grid;
@@ -1095,8 +1154,22 @@ tbody tr:hover {
     width: 28px;
     height: 28px;
   }
-  .agent-panel {
+  .agent-panel,
+  .team-panel {
     padding: 18px;
+  }
+  .invite-form,
+  .person-row,
+  .role-form {
+    grid-template-columns: 1fr;
+    display: grid;
+    align-items: stretch;
+  }
+  .role-form select,
+  .invite-form button,
+  .person-row .danger-text,
+  .role-form button {
+    width: 100%;
   }
   .login {
     display: flex;

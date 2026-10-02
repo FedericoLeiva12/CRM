@@ -14,12 +14,14 @@ import { Sidebar } from '../features/workspace/sidebar';
 import { RecordsView } from '../features/workspace/records-view';
 import { FieldsView } from '../features/workspace/fields-view';
 import { AgentsView } from '../features/workspace/agents-view';
+import { TeamView } from '../features/workspace/team-view';
 import { WorkspaceDialogs } from '../features/workspace/workspace-dialogs';
 import type { Agent, CRMRecord, ModalKind } from '../types/crm';
 export const loader = workspaceLoader;
 export const action = workspaceAction;
 export default function Workspace() {
-  const { sections, section, view, records, agents } = useLoaderData<typeof loader>();
+  const { sections, section, view, records, agents, users, invites, currentUser } =
+    useLoaderData<typeof loader>();
   const actionResult = useActionData<typeof action>();
   const navigation = useNavigation();
   const [, setParams] = useSearchParams();
@@ -27,11 +29,13 @@ export default function Workspace() {
   const [editing, setEditing] = useState<CRMRecord | null>(null);
   const [revoke, setRevoke] = useState<Agent | null>(null);
   const [token, setToken] = useState('');
+  const [inviteLink, setInviteLink] = useState('');
   const busy = navigation.state !== 'idle';
   useEffect(() => {
     if (actionResult?.ok) {
       setModal(null);
       if (actionResult.token) setToken(actionResult.token);
+      if (actionResult.inviteLink) setInviteLink(actionResult.inviteLink);
     }
   }, [actionResult]);
   const error = actionResult?.error;
@@ -46,7 +50,13 @@ export default function Workspace() {
   }
   return (
     <div className="workspace">
-      <Sidebar sections={sections} section={section} view={view} onOpenModal={setModal} />
+      <Sidebar
+        sections={sections}
+        section={section}
+        view={view}
+        admin={currentUser.role === 'admin'}
+        onOpenModal={setModal}
+      />
 
       <main className="main" aria-busy={busy}>
         <header className="topbar">
@@ -60,7 +70,9 @@ export default function Workspace() {
               <span className="status-dot" />
               Secure workspace
             </span>
-            <span className="profile">SA</span>
+            <span className="profile" title={currentUser.email}>
+              {initials(currentUser.name, currentUser.email)}
+            </span>
           </div>
         </header>
         <div className="page">
@@ -72,21 +84,26 @@ export default function Workspace() {
               <h1>{presentation.title}</h1>
               <p className="muted">{presentation.description}</p>
             </div>
-            <button className="primary" onClick={openPrimaryAction}>
-              <Plus size={18} />
-              {presentation.actionLabel}
-            </button>
+            {presentation.actionLabel && (
+              <button className="primary" onClick={openPrimaryAction}>
+                <Plus size={18} />
+                {presentation.actionLabel}
+              </button>
+            )}
           </div>
           {busy && (
             <p role="status" className="loading-message">
               Updating workspace…
             </p>
           )}
-          {actionResult?.ok && actionResult.intent !== 'agent' && !busy && (
-            <p role="status" className="success-message">
-              {actionMessages[actionResult.intent]}
-            </p>
-          )}
+          {actionResult?.ok &&
+            actionResult.intent !== 'agent' &&
+            actionResult.intent !== 'invite' &&
+            !busy && (
+              <p role="status" className="success-message">
+                {actionMessages[actionResult.intent]}
+              </p>
+            )}
           {error && (
             <div role="alert" className="error-banner">
               {error}
@@ -97,6 +114,7 @@ export default function Workspace() {
               key={section.id}
               section={section}
               records={records}
+              canManage={currentUser.role === 'admin'}
               onOpenRecord={openRecord}
               onAddField={() => setModal('field')}
               onDeleteRecord={(record) => {
@@ -111,6 +129,16 @@ export default function Workspace() {
               section={section}
               onSelectSection={(identifier) => setParams({ view: 'fields', section: identifier })}
               onAddField={() => setModal('field')}
+            />
+          )}
+          {view === 'team' && (
+            <TeamView
+              users={users}
+              invites={invites}
+              currentUserId={currentUser.id}
+              inviteLink={inviteLink}
+              busy={busy}
+              onDismissLink={() => setInviteLink('')}
             />
           )}
           {view === 'agents' && (
@@ -140,6 +168,12 @@ export default function Workspace() {
       />
     </div>
   );
+}
+function initials(name: string, email: string) {
+  const source = name.trim() || email.split('@')[0] || email;
+  const parts = source.split(/[\s._-]+/).filter(Boolean);
+  const letters = parts.length > 1 ? `${parts[0][0]}${parts[1][0]}` : source.slice(0, 2);
+  return letters.toUpperCase();
 }
 export function ErrorBoundary() {
   const error = useRouteError();

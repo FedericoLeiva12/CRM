@@ -1,6 +1,15 @@
 import { json, redirect, type LoaderFunctionArgs, type ActionFunctionArgs } from '@remix-run/node';
 import { api, requireOrigin } from '../../api.server';
-import type { Agent, CreatedAgent, CRMRecord, Section, WorkspaceView } from '../../types/crm';
+import type {
+  Agent,
+  CreatedAgent,
+  CreatedInvite,
+  CRMRecord,
+  Invite,
+  Section,
+  WorkspaceUser,
+  WorkspaceView,
+} from '../../types/crm';
 
 function textValue(form: FormData, name: string): string {
   const value = form.get(name);
@@ -12,20 +21,26 @@ function checkedValue(form: FormData, name: string): boolean {
 }
 
 export async function workspaceLoader({ request }: LoaderFunctionArgs) {
+  const currentUser = await api<WorkspaceUser>(request, '/me');
   const sections = await api<Section[]>(request, '/sections');
   const searchParams = new URL(request.url).searchParams;
   const section =
     sections.find((section) => section.id === searchParams.get('section')) || sections[0];
   const requestedView = searchParams.get('view');
   const view: WorkspaceView =
-    requestedView === 'fields' || requestedView === 'agents' ? requestedView : 'records';
-  const [records, agents] = await Promise.all([
+    requestedView === 'fields' || requestedView === 'agents' || requestedView === 'team'
+      ? requestedView
+      : 'records';
+  if (view !== 'records' && currentUser.role !== 'admin') throw redirect('/');
+  const [records, agents, users, invites] = await Promise.all([
     view === 'records' && section
       ? api<CRMRecord[]>(request, `/sections/${section.id}/records`)
       : Promise.resolve([]),
     view === 'agents' ? api<Agent[]>(request, '/agents') : Promise.resolve([]),
+    view === 'team' ? api<WorkspaceUser[]>(request, '/users') : Promise.resolve([]),
+    view === 'team' ? api<Invite[]>(request, '/invites') : Promise.resolve([]),
   ]);
-  return json({ sections, section, view, records, agents });
+  return json({ sections, section, view, records, agents, users, invites, currentUser });
 }
 
 async function saveRelationship(request: Request, form: FormData, sectionID: string) {
@@ -92,6 +107,7 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
   const sectionID = textValue(form, 'section');
   try {
     let createdToken: string | undefined;
+    let inviteLink: string | undefined;
     switch (intent) {
       case 'logout':
         return await signOut(request);
@@ -145,10 +161,39 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
       case 'permissions':
         await savePermissions(request, form);
         break;
+      case 'invite': {
+        const invite = await api<CreatedInvite>(request, '/invites', {
+          method: 'POST',
+          body: JSON.stringify({
+            email: textValue(form, 'email'),
+            role: textValue(form, 'role'),
+          }),
+        });
+        inviteLink = invite.link;
+        break;
+      }
+      case 'revoke-invite':
+        await api(request, `/invites/${textValue(form, 'id')}`, { method: 'DELETE' });
+        break;
+      case 'role':
+        await api(request, `/users/${textValue(form, 'id')}/role`, {
+          method: 'PUT',
+          body: JSON.stringify({ role: textValue(form, 'role') }),
+        });
+        break;
+      case 'remove-user':
+        await api(request, `/users/${textValue(form, 'id')}`, { method: 'DELETE' });
+        break;
       default:
         throw new Error('Unknown action');
     }
-    return json({ ok: true, intent, token: createdToken, error: undefined as string | undefined });
+    return json({
+      ok: true,
+      intent,
+      token: createdToken,
+      inviteLink,
+      error: undefined as string | undefined,
+    });
   } catch (error) {
     if (error instanceof Response) throw error;
     return json(
@@ -156,6 +201,7 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
         ok: false,
         intent,
         token: undefined as string | undefined,
+        inviteLink: undefined as string | undefined,
         error: error instanceof Error ? error.message : 'Unable to save',
       },
       { status: 400 },

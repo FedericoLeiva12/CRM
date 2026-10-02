@@ -33,7 +33,7 @@ func (repository *Repository) BootstrapAdmin(ctx context.Context, email, passwor
 		return err
 	}
 	if !exists {
-		if _, err = transaction.Exec(ctx, "INSERT INTO users(id,email,password_hash) VALUES($1,$2,$3)", token.New(), email, passwordHash); err != nil {
+		if _, err = transaction.Exec(ctx, "INSERT INTO users(id,email,password_hash,role) VALUES($1,$2,$3,'admin')", token.New(), email, passwordHash); err != nil {
 			return err
 		}
 	}
@@ -53,10 +53,16 @@ func (repository *Repository) CreateSession(ctx context.Context, userID, session
 	_, err := repository.pool.Exec(ctx, "INSERT INTO sessions(hash,user_id,expires_at) VALUES($1,$2,$3)", token.Hash(sessionToken), userID, expiresAt)
 	return err
 }
-func (repository *Repository) SessionUser(ctx context.Context, sessionToken string) (string, error) {
-	var userID string
-	err := repository.pool.QueryRow(ctx, "SELECT user_id FROM sessions WHERE hash=$1 AND expires_at>now()", token.Hash(sessionToken)).Scan(&userID)
-	return userID, classifyMissingRow(err)
+
+type Identity struct {
+	UserID string
+	Role   string
+}
+
+func (repository *Repository) SessionUser(ctx context.Context, sessionToken string) (Identity, error) {
+	var identity Identity
+	err := repository.pool.QueryRow(ctx, "SELECT s.user_id,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=$1 AND s.expires_at>now()", token.Hash(sessionToken)).Scan(&identity.UserID, &identity.Role)
+	return identity, classifyMissingRow(err)
 }
 func (repository *Repository) DeleteSession(ctx context.Context, sessionToken string) error {
 	_, err := repository.pool.Exec(ctx, "DELETE FROM sessions WHERE hash=$1", token.Hash(sessionToken))

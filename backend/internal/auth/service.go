@@ -83,11 +83,38 @@ func (service *Service) Login(ctx context.Context, email, password string) (stri
 	service.limiter.reset(email)
 	return sessionToken, nil
 }
-func (service *Service) SessionUser(ctx context.Context, sessionToken string) (string, error) {
+func (service *Service) SessionUser(ctx context.Context, sessionToken string) (store.Identity, error) {
 	return service.repository.SessionUser(ctx, sessionToken)
 }
 func (service *Service) Logout(ctx context.Context, sessionToken string) error {
 	return service.repository.DeleteSession(ctx, sessionToken)
+}
+func (service *Service) NormalizeEmail(email string) (string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email || len(email) > 254 {
+		return "", domain.Invalid("Enter a valid email address")
+	}
+	return email, nil
+}
+func (service *Service) AcceptInvite(ctx context.Context, plainToken, name, password string) (string, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 80 {
+		return "", domain.Invalid("Name must contain 1–80 characters")
+	}
+	if err := validatePassword(password); err != nil {
+		return "", err
+	}
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(password), PasswordCost)
+	if err != nil {
+		return "", err
+	}
+	sessionToken := token.New()
+	_, err = service.repository.AcceptInvite(ctx, plainToken, name, string(passwordHash), sessionToken, time.Now().Add(SessionLifetime))
+	if err != nil {
+		return "", err
+	}
+	return sessionToken, nil
 }
 func (service *Service) ChangePassword(ctx context.Context, userID, currentPassword, newPassword string) error {
 	if err := validatePassword(newPassword); err != nil {
