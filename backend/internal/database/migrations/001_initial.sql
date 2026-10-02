@@ -1,0 +1,11 @@
+CREATE TABLE IF NOT EXISTS users(id text PRIMARY KEY, email text UNIQUE NOT NULL, password_hash text NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions(hash text PRIMARY KEY,user_id text REFERENCES users(id) ON DELETE CASCADE,expires_at timestamptz NOT NULL);
+CREATE TABLE IF NOT EXISTS sections(id text PRIMARY KEY,name text NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS fields(id text NOT NULL,section_id text REFERENCES sections(id),label text NOT NULL,type text NOT NULL CHECK(type IN ('text','email','number','date','boolean')),required boolean NOT NULL DEFAULT false,PRIMARY KEY(section_id,id));
+CREATE TABLE IF NOT EXISTS records(id text PRIMARY KEY,section_id text REFERENCES sections(id),data jsonb NOT NULL,created_at timestamptz NOT NULL DEFAULT now(),updated_at timestamptz NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS records_section ON records(section_id,created_at);
+CREATE TABLE IF NOT EXISTS agents(id text PRIMARY KEY,name text NOT NULL,token_hash text UNIQUE NOT NULL,created_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS permissions(agent_id text REFERENCES agents(id) ON DELETE CASCADE,section_id text REFERENCES sections(id),can_read boolean NOT NULL DEFAULT false,can_write boolean NOT NULL DEFAULT false,PRIMARY KEY(agent_id,section_id));
+CREATE TABLE IF NOT EXISTS audit(id bigserial PRIMARY KEY,actor text NOT NULL,action text NOT NULL,section_id text,record_id text,created_at timestamptz NOT NULL DEFAULT now());
+INSERT INTO sections(id,name) VALUES('clients','Clients'),('prospects','Prospects') ON CONFLICT DO NOTHING;
+INSERT INTO fields(id,section_id,label,type,required) SELECT f.id,s.id,f.label,f.type,f.required FROM sections s CROSS JOIN (VALUES('name','Name','text',true),('email','Email','email',false),('company','Company','text',false),('status','Status','text',false),('value','Value','number',false),('notes','Notes','text',false)) f(id,label,type,required) WHERE s.id IN ('clients','prospects') ON CONFLICT DO NOTHING;
