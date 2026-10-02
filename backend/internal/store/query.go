@@ -51,7 +51,11 @@ func (repository *Repository) QueryRecords(ctx context.Context, sectionID string
 			plan.column = valueColumn(definitions[query.Sort.Field].Type)
 		}
 	}
-	filterSQL, filterArgs, err := filterSQL(sectionID, query.Filters, definitions)
+	terms, err := domain.SearchTerms(query.Search)
+	if err != nil {
+		return domain.ListPage{}, err
+	}
+	filterSQL, filterArgs, err := filterSQL(sectionID, query.Filters, terms, definitions)
 	if err != nil {
 		return domain.ListPage{}, err
 	}
@@ -121,9 +125,13 @@ func (repository *Repository) QueryRecords(ctx context.Context, sectionID string
 	return page, nil
 }
 
-func filterSQL(sectionID string, filters []domain.Filter, definitions map[string]domain.Field) (string, []any, error) {
+func filterSQL(sectionID string, filters []domain.Filter, searchTerms []string, definitions map[string]domain.Field) (string, []any, error) {
 	args := []any{sectionID}
 	var builder strings.Builder
+	// Every word must appear in some text or email value of the record.
+	for _, term := range searchTerms {
+		fmt.Fprintf(&builder, " AND EXISTS (SELECT 1 FROM record_values v WHERE v.record_id = r.id AND v.section_id = r.section_id AND v.text_value ILIKE %s ESCAPE '\\')", placeholder(&args, containsPattern(term)))
+	}
 	for _, filter := range filters {
 		field := definitions[filter.Field]
 		switch filter.Op {
@@ -143,6 +151,13 @@ func filterSQL(sectionID string, filters []domain.Filter, definitions map[string
 			} else {
 				fmt.Fprintf(&builder, " AND %s", exists)
 			}
+		case domain.OpIn:
+			list, err := inList(field, filter.Value)
+			if err != nil {
+				return "", nil, err
+			}
+			arrayType := map[string]string{"text_value": "text[]", "number_value": "float8[]"}[valueColumn(field.Type)]
+			fmt.Fprintf(&builder, " AND EXISTS (SELECT 1 FROM record_values v WHERE v.record_id = r.id AND v.section_id = r.section_id AND v.field_id = %s AND v.%s = ANY(%s::%s))", placeholder(&args, field.ID), valueColumn(field.Type), placeholder(&args, list), arrayType)
 		case domain.OpContains:
 			fmt.Fprintf(&builder, " AND EXISTS (SELECT 1 FROM record_values v WHERE v.record_id = r.id AND v.section_id = r.section_id AND v.field_id = %s AND v.text_value ILIKE %s ESCAPE '\\')", placeholder(&args, field.ID), placeholder(&args, containsPattern(filter.Value.(string))))
 		case domain.OpGt, domain.OpGte, domain.OpLt, domain.OpLte:
@@ -158,6 +173,33 @@ func filterSQL(sectionID string, filters []domain.Filter, definitions map[string
 		}
 	}
 	return builder.String(), args, nil
+}
+
+func inList(field domain.Field, value any) (any, error) {
+	items, ok := value.([]any)
+	if !ok {
+		return nil, domain.Invalid("Unsupported filter")
+	}
+	if field.Type == domain.FieldNumber {
+		numbers := make([]float64, 0, len(items))
+		for _, item := range items {
+			number, isNumber := item.(float64)
+			if !isNumber {
+				return nil, domain.Invalid("Unsupported filter")
+			}
+			numbers = append(numbers, number)
+		}
+		return numbers, nil
+	}
+	texts := make([]string, 0, len(items))
+	for _, item := range items {
+		text, isText := item.(string)
+		if !isText {
+			return nil, domain.Invalid("Unsupported filter")
+		}
+		texts = append(texts, text)
+	}
+	return texts, nil
 }
 
 func cursorClause(cursor string, plan sortPlan, orderExpr string, argCount int) (string, []any, error) {

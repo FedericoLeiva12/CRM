@@ -15,6 +15,12 @@ export interface CRMRecord {
   data: Record<string, string | number | boolean | null>;
   updated_at: string;
 }
+export interface RecordPage {
+  records: CRMRecord[];
+  total: number;
+  nextCursor: string | null;
+  error: string | null;
+}
 export interface RecordLink {
   section_id: string;
   section_name: string;

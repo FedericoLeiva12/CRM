@@ -18,6 +18,14 @@ const (
 	OpLte      = "lte"
 	OpIsEmpty  = "is_empty"
 	OpNotEmpty = "not_empty"
+	OpIn       = "in"
+)
+
+// Limits keep one list request from building an unbounded SQL statement.
+const (
+	MaxInValues     = 100
+	MaxSearchLength = 200
+	MaxSearchTerms  = 8
 )
 
 // MergeRecord applies a partial update. A nil value clears that field.
@@ -111,6 +119,9 @@ func ValidateListQuery(fields []Field, query ListQuery) error {
 	if query.Limit < 1 || query.Limit > MaxPageSize {
 		return Invalid(fmt.Sprintf("Limit must be between 1 and %d", MaxPageSize))
 	}
+	if _, err := SearchTerms(query.Search); err != nil {
+		return err
+	}
 	definitions := fieldIndex(fields)
 	for _, filter := range query.Filters {
 		field, known := definitions[filter.Field]
@@ -141,6 +152,8 @@ func validateFilter(field Field, filter Filter) error {
 		return nil
 	case OpEq, OpNeq:
 		return validateFilterValue(field, filter.Value)
+	case OpIn:
+		return validateInValues(field, filter.Value)
 	case OpContains:
 		if field.Type != FieldText && field.Type != FieldEmail {
 			return Invalid(fmt.Sprintf("%s does not support contains", field.Label))
@@ -154,6 +167,37 @@ func validateFilter(field Field, filter Filter) error {
 	default:
 		return Invalid("Unsupported filter")
 	}
+}
+
+// validateInValues accepts a bounded list of values of the field's own type.
+// Booleans are excluded because a two-value set is just eq or is_empty.
+func validateInValues(field Field, value any) error {
+	if field.Type == FieldBoolean || field.Type == FieldDate {
+		return Invalid(fmt.Sprintf("%s does not support is any of", field.Label))
+	}
+	values, isList := value.([]any)
+	if !isList || len(values) == 0 || len(values) > MaxInValues {
+		return Invalid(fmt.Sprintf("Choose between 1 and %d values for %s", MaxInValues, field.Label))
+	}
+	for _, item := range values {
+		if err := validateFilterValue(field, item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SearchTerms splits a free-text search into the words that must each match.
+func SearchTerms(search string) ([]string, error) {
+	search = strings.TrimSpace(search)
+	if len(search) > MaxSearchLength {
+		return nil, Invalid(fmt.Sprintf("Search must be at most %d characters", MaxSearchLength))
+	}
+	terms := strings.Fields(search)
+	if len(terms) > MaxSearchTerms {
+		return nil, Invalid(fmt.Sprintf("Search accepts at most %d words", MaxSearchTerms))
+	}
+	return terms, nil
 }
 
 func validateFilterValue(field Field, value any) error {

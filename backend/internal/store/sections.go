@@ -35,6 +35,11 @@ func (repository *Repository) ListSections(ctx context.Context) ([]domain.Sectio
 	}
 	return sections, nil
 }
+func (repository *Repository) SectionExists(ctx context.Context, sectionID string) (bool, error) {
+	var exists bool
+	err := repository.pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM sections WHERE id=$1)", sectionID).Scan(&exists)
+	return exists, err
+}
 func (repository *Repository) ListFields(ctx context.Context, sectionID string) ([]domain.Field, error) {
 	rows, err := repository.pool.Query(ctx, "SELECT id,label,type,required FROM fields WHERE section_id=$1 ORDER BY id", sectionID)
 	if err != nil {

@@ -1,11 +1,13 @@
 import {
   useLoaderData,
   useActionData,
+  useLocation,
   useNavigation,
   useSearchParams,
-  useLocation,
   useRouteError,
   isRouteErrorResponse,
+  type Location,
+  type Navigation,
 } from '@remix-run/react';
 import { viewPresentation, actionMessages } from '../features/workspace/presentation';
 import { ChevronRight, Plus } from 'lucide-react';
@@ -27,7 +29,7 @@ export default function Workspace() {
     sections,
     section,
     view,
-    records,
+    page,
     agents,
     users,
     invites,
@@ -40,14 +42,14 @@ export default function Workspace() {
   const actionResult = useActionData<typeof action>();
   const navigation = useNavigation();
   const [params, setParams] = useSearchParams();
+  const location = useLocation();
   const [modal, setModal] = useState<ModalKind | null>(null);
   const [editing, setEditing] = useState<CRMRecord | null>(null);
   const [revoke, setRevoke] = useState<Agent | null>(null);
   const [token, setToken] = useState('');
   const [inviteLink, setInviteLink] = useState('');
   const [webhookEditor, setWebhookEditor] = useState(false);
-  const busy = navigation.state !== 'idle';
-  const location = useLocation();
+  const busy = navigation.state !== 'idle' && !isListRefinement(navigation, location);
   const openedFor = useRef('');
   useEffect(() => {
     // One open per navigation: revalidation after a save keeps the key, a new link click changes it.
@@ -151,7 +153,7 @@ export default function Workspace() {
             <RecordsView
               key={section.id}
               section={section}
-              records={records}
+              page={page}
               canManage={currentUser.role === 'admin'}
               onOpenRecord={openRecord}
               onAddField={() => setModal('field')}
@@ -218,6 +220,19 @@ export default function Workspace() {
       />
     </div>
   );
+}
+const listParams = ['q', 'f', 'sort', 'dir'];
+// Searching, filtering and sorting reload the list in place; they should not flash the global banner.
+function isListRefinement(navigation: Navigation, location: Location) {
+  if (navigation.state !== 'loading' || navigation.formMethod || !navigation.location) return false;
+  if (navigation.location.pathname !== location.pathname) return false;
+  const next = new URLSearchParams(navigation.location.search);
+  const current = new URLSearchParams(location.search);
+  for (const name of listParams) {
+    next.delete(name);
+    current.delete(name);
+  }
+  return next.toString() === current.toString();
 }
 function initials(name: string, email: string) {
   const source = name.trim() || email.split('@')[0] || email;

@@ -65,3 +65,40 @@ func TestListAndActivityValidation(t *testing.T) {
 }
 
 func strPtr(value string) *string { return &value }
+
+func TestListQueryInAndSearch(t *testing.T) {
+	fields := []Field{{ID: "name", Label: "Name", Type: FieldText}, {ID: "amount", Label: "Amount", Type: FieldNumber}, {ID: "won", Label: "Won", Type: FieldBoolean}, {ID: "due", Label: "Due", Type: FieldDate}}
+	valid := []ListQuery{
+		{Limit: 10, Filters: []Filter{{Field: "name", Op: OpIn, Value: []any{"a", "b"}}}},
+		{Limit: 10, Filters: []Filter{{Field: "amount", Op: OpIn, Value: []any{1.0, 2.0}}}},
+		{Limit: 10, Search: "  two words  "},
+	}
+	for _, query := range valid {
+		if err := ValidateListQuery(fields, query); err != nil {
+			t.Fatalf("%+v: %v", query, err)
+		}
+	}
+	tooMany := make([]any, MaxInValues+1)
+	for index := range tooMany {
+		tooMany[index] = "x"
+	}
+	invalid := []ListQuery{
+		{Limit: 10, Filters: []Filter{{Field: "name", Op: OpIn, Value: []any{}}}},
+		{Limit: 10, Filters: []Filter{{Field: "name", Op: OpIn, Value: "a"}}},
+		{Limit: 10, Filters: []Filter{{Field: "name", Op: OpIn, Value: []any{1.0}}}},
+		{Limit: 10, Filters: []Filter{{Field: "name", Op: OpIn, Value: tooMany}}},
+		{Limit: 10, Filters: []Filter{{Field: "amount", Op: OpIn, Value: []any{"x"}}}},
+		{Limit: 10, Filters: []Filter{{Field: "won", Op: OpIn, Value: []any{true}}}},
+		{Limit: 10, Filters: []Filter{{Field: "due", Op: OpIn, Value: []any{"2026-01-01"}}}},
+		{Limit: 10, Search: "a b c d e f g h i"},
+	}
+	for _, query := range invalid {
+		if err := ValidateListQuery(fields, query); err == nil {
+			t.Fatalf("%+v was accepted", query)
+		}
+	}
+	terms, err := SearchTerms("  two   words ")
+	if err != nil || len(terms) != 2 || terms[0] != "two" || terms[1] != "words" {
+		t.Fatalf("unexpected terms %v %v", terms, err)
+	}
+}

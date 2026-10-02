@@ -1,5 +1,6 @@
 {
   "include": ["app/**/*.ts", "app/**/*.tsx", "vite.config.ts"],
+  "exclude": ["app/**/*.test.ts"],
   "compilerOptions": {
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "types": ["@remix-run/node", "vite/client"],

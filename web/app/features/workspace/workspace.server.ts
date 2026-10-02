@@ -6,12 +6,20 @@ import type {
   CreatedInvite,
   CRMRecord,
   Invite,
+  RecordPage,
   Section,
   WebhookDelivery,
   WebhookEndpoint,
   WorkspaceUser,
   WorkspaceView,
 } from '../../types/crm';
+import { PAGE_SIZE, parseListState, toApiQuery } from './list-query';
+
+interface QueryResponse {
+  records: RecordPage['records'];
+  next_cursor: string | null;
+  total: number;
+}
 
 function textValue(form: FormData, name: string): string {
   const value = form.get(name);
@@ -60,6 +68,40 @@ async function openedRecord(request: Request, sectionID: string, params: URLSear
   }
 }
 
+/**
+ * One page of the shared filter/sort/search query. A rejected query (for example a
+ * hand-edited URL) becomes an inline error so the toolbar can still be used to fix it.
+ */
+export async function loadRecordPage(
+  request: Request,
+  section: Section,
+  params: URLSearchParams,
+  cursor = '',
+): Promise<RecordPage> {
+  const body = toApiQuery(parseListState(params), section.fields, { limit: PAGE_SIZE, cursor });
+  try {
+    const result = await api<QueryResponse>(request, `/sections/${section.id}/records/query`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    return {
+      records: result.records,
+      total: result.total,
+      nextCursor: result.next_cursor,
+      error: null,
+    };
+  } catch (error) {
+    if (error instanceof Response || error instanceof TypeError || error instanceof SyntaxError)
+      throw error;
+    return {
+      records: [],
+      total: 0,
+      nextCursor: null,
+      error: error instanceof Error ? error.message : 'Unable to load records',
+    };
+  }
+}
+
 export async function workspaceLoader({ request }: LoaderFunctionArgs) {
   const currentUser = await api<WorkspaceUser>(request, '/me');
   const sections = await api<Section[]>(request, '/sections');
@@ -80,10 +122,10 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
   const webhooks = view === 'webhooks' ? await api<WebhookEndpoint[]>(request, '/webhooks') : [];
   const requestedEndpoint = searchParams.get('endpoint') || '';
   const selectedWebhook = webhooks.find((endpoint) => endpoint.id === requestedEndpoint);
-  const [records, agents, users, invites, deliveries] = await Promise.all([
+  const [page, agents, users, invites, deliveries] = await Promise.all([
     view === 'records' && section
-      ? api<CRMRecord[]>(request, `/sections/${section.id}/records`)
-      : Promise.resolve([]),
+      ? loadRecordPage(request, section, searchParams)
+      : Promise.resolve<RecordPage>({ records: [], total: 0, nextCursor: null, error: null }),
     view === 'agents' ? api<Agent[]>(request, '/agents') : Promise.resolve([]),
     view === 'team' ? api<WorkspaceUser[]>(request, '/users') : Promise.resolve([]),
     view === 'team' ? api<Invite[]>(request, '/invites') : Promise.resolve([]),
@@ -95,7 +137,7 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
     sections,
     section,
     view,
-    records,
+    page,
     agents,
     users,
     invites,

@@ -17,7 +17,7 @@ type updateArguments struct {
 }
 type filterArgument struct {
 	Field string `json:"field"`
-	Op    string `json:"op" jsonschema:"eq, neq, contains, gt, gte, lt, lte, is_empty, or not_empty"`
+	Op    string `json:"op" jsonschema:"eq, neq, contains, in, gt, gte, lt, lte, is_empty, or not_empty"`
 	Value any    `json:"value,omitempty"`
 }
 type sortArgument struct {

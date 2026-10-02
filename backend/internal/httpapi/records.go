@@ -4,7 +4,10 @@ import (
 	"net/http"
 
 	"siracrm/internal/domain"
+	"siracrm/internal/store"
 )
+
+const defaultPageSize = 50
 
 type recordRequest struct {
 	Data map[string]any `json:"data"`
@@ -17,6 +20,48 @@ func (server *Server) listRecords(writer http.ResponseWriter, request *http.Requ
 		return
 	}
 	writeJSON(writer, http.StatusOK, records)
+}
+
+type queryRequest struct {
+	Filters []domain.Filter `json:"filters"`
+	Search  string          `json:"search"`
+	Sort    *domain.Sort    `json:"sort"`
+	Limit   int             `json:"limit"`
+	Cursor  string          `json:"cursor"`
+}
+
+// queryRecords gives the browser the same filtered, sorted, cursor-paged query
+// the MCP list tools use. A signed-in user can read every section, as in listRecords.
+func (server *Server) queryRecords(writer http.ResponseWriter, request *http.Request) {
+	var input queryRequest
+	if !decodeJSON(writer, request, &input) {
+		return
+	}
+	sectionID := request.PathValue("section")
+	exists, err := server.repository.SectionExists(request.Context(), sectionID)
+	if err != nil {
+		writeServiceError(writer, err)
+		return
+	}
+	if !exists {
+		writeServiceError(writer, store.ErrNotFound)
+		return
+	}
+	if input.Limit == 0 {
+		input.Limit = defaultPageSize
+	}
+	page, err := server.repository.QueryRecords(request.Context(), sectionID, domain.ListQuery{
+		Filters: input.Filters, Search: input.Search, Sort: input.Sort, Limit: input.Limit, Cursor: input.Cursor,
+	})
+	if err != nil {
+		writeServiceError(writer, err)
+		return
+	}
+	var nextCursor any
+	if page.NextCursor != "" {
+		nextCursor = page.NextCursor
+	}
+	writeJSON(writer, http.StatusOK, map[string]any{"records": page.Records, "limit": page.Limit, "next_cursor": nextCursor, "total": page.Total})
 }
 func (server *Server) getRecord(writer http.ResponseWriter, request *http.Request) {
 	sectionID := request.PathValue("section")

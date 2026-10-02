@@ -141,6 +141,7 @@ type Sort struct {
 // ListQuery is the optional search contract. Limit 0 means the caller has not chosen one yet.
 type ListQuery struct {
 	Filters []Filter
+	Search  string
 	Sort    *Sort
 	Limit   int
 	Cursor  string
