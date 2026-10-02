@@ -38,6 +38,18 @@ const webhookEventIds = [
   'timeline.entry_created',
   'comment.mentioned',
 ];
+function webhookExcludedActors(form: FormData) {
+  const excluded: { kind: 'user' | 'agent'; id: string }[] = [];
+  for (const [key, value] of form.entries()) {
+    if (value !== 'on' || typeof key !== 'string' || !key.startsWith('exclude:')) continue;
+    const parts = key.slice('exclude:'.length).split(':');
+    if (parts.length !== 2) continue;
+    const kind = parts[0];
+    if (kind !== 'user' && kind !== 'agent') continue;
+    excluded.push({ kind, id: parts[1] });
+  }
+  return excluded;
+}
 function webhookBody(form: FormData) {
   return {
     url: textValue(form, 'url'),
@@ -45,6 +57,7 @@ function webhookBody(form: FormData) {
     event_types: webhookEventIds.filter((eventType) => form.get(`event:${eventType}`) === 'on'),
     section_id: textValue(form, 'section_id'),
     enabled: checkedValue(form, 'enabled'),
+    excluded_actors: webhookExcludedActors(form),
     signing_secret: textValue(form, 'signing_secret'),
     clear_signing_secret: checkedValue(form, 'clear_signing_secret'),
     custom_header_name: textValue(form, 'custom_header_name'),
@@ -126,8 +139,12 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
     view === 'records' && section
       ? loadRecordPage(request, section, searchParams)
       : Promise.resolve<RecordPage>({ records: [], total: 0, nextCursor: null, error: null }),
-    view === 'agents' ? api<Agent[]>(request, '/agents') : Promise.resolve([]),
-    view === 'team' ? api<WorkspaceUser[]>(request, '/users') : Promise.resolve([]),
+    view === 'agents' || view === 'webhooks'
+      ? api<Agent[]>(request, '/agents')
+      : Promise.resolve([]),
+    view === 'team' || view === 'webhooks'
+      ? api<WorkspaceUser[]>(request, '/users')
+      : Promise.resolve([]),
     view === 'team' ? api<Invite[]>(request, '/invites') : Promise.resolve([]),
     selectedWebhook
       ? api<WebhookDelivery[]>(request, `/webhooks/${selectedWebhook.id}/deliveries`)

@@ -93,6 +93,8 @@ Secrets are write-only after save. Leave the secret fields blank to keep them, o
 
 Subscribed types are `record.created`, `record.updated`, `record.deleted`, `section.created`, `field.created`, `timeline.entry_created`, and `comment.mentioned`. `webhook.test` is not a subscription. **Send test event** queues one test for that endpoint, including while it is disabled. A section filter skips events for other sections. Events with no section, such as a workspace-wide change that does not name one, are delivered only to endpoints with no section filter.
 
+Each endpoint can list users and agents to **exclude as actors**. When an event’s `actor` matches an excluded principal, that endpoint does not get a delivery row at enqueue time (the event is not counted as a failure). The endpoint’s `skipped_events` counter increases instead. Test events are never filtered. For `comment.mentioned`, events where the excluded principal is the one **mentioned** are still delivered; only the comment author is filtered. Configure exclusions on the Webhooks page or with `excluded_actors` on create and update (`[{ "kind": "user"|"agent", "id": "…" }]`). Deleted users and agents are removed from exclusion lists automatically.
+
 The body is JSON, schema version 1:
 
 ```json
@@ -277,7 +279,7 @@ web/app/
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) for dependency boundaries, extension guidelines and quality tooling.
 
-The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection. Webhook tests cover signatures, custom headers, retry and backoff, automatic pause, outbox durability, member denial, and the SSRF block.
+The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection. Webhook tests cover signatures, custom headers, retry and backoff, automatic pause, outbox durability, member denial, actor exclusions (including mention exceptions and test events), and the SSRF block.
 
 ## Verify
 

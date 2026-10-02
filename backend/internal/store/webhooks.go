@@ -12,19 +12,21 @@ import (
 )
 
 type WebhookEndpoint struct {
-	ID                  string    `json:"id"`
-	URL                 string    `json:"url"`
-	Description         string    `json:"description"`
-	EventTypes          []string  `json:"event_types"`
-	SectionID           *string   `json:"section_id"`
-	Enabled             bool      `json:"enabled"`
-	AutoDisabled        bool      `json:"auto_disabled"`
-	ConsecutiveFailures int       `json:"consecutive_failures"`
-	SigningSecretSet    bool      `json:"signing_secret_set"`
-	CustomHeaderName    string    `json:"custom_header_name"`
-	CustomHeaderSet     bool      `json:"custom_header_set"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                  string                   `json:"id"`
+	URL                 string                   `json:"url"`
+	Description         string                   `json:"description"`
+	EventTypes          []string                 `json:"event_types"`
+	SectionID           *string                  `json:"section_id"`
+	Enabled             bool                     `json:"enabled"`
+	AutoDisabled        bool                     `json:"auto_disabled"`
+	ConsecutiveFailures int                      `json:"consecutive_failures"`
+	SkippedEvents       int64                    `json:"skipped_events"`
+	ExcludedActors      []domain.WebhookActorRef `json:"excluded_actors"`
+	SigningSecretSet    bool                     `json:"signing_secret_set"`
+	CustomHeaderName    string                   `json:"custom_header_name"`
+	CustomHeaderSet     bool                     `json:"custom_header_set"`
+	CreatedAt           time.Time                `json:"created_at"`
+	UpdatedAt           time.Time                `json:"updated_at"`
 }
 
 type WebhookInput struct {
@@ -33,6 +35,7 @@ type WebhookInput struct {
 	EventTypes         []string
 	SectionID          string
 	Enabled            bool
+	ExcludedActors     []domain.WebhookActorRef
 	SigningSecret      string
 	ClearSigningSecret bool
 	CustomHeaderName   string
@@ -82,13 +85,14 @@ type DeliveryOutcome struct {
 }
 
 type preparedWebhook struct {
-	URL           string
-	Description   string
-	EventTypes    []string
-	SectionID     string
-	SigningSecret string
-	HeaderName    string
-	HeaderValue   string
+	URL            string
+	Description    string
+	EventTypes     []string
+	SectionID      string
+	ExcludedActors []domain.WebhookActorRef
+	SigningSecret  string
+	HeaderName     string
+	HeaderValue    string
 }
 
 type storedSecrets struct {
@@ -111,11 +115,25 @@ func (repository *Repository) ListWebhookEndpoints(ctx context.Context) ([]Webho
 		}
 		endpoints = append(endpoints, endpoint)
 	}
-	return endpoints, rows.Err()
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	if err = attachWebhookExcludedActors(ctx, repository.pool, endpoints); err != nil {
+		return nil, err
+	}
+	return endpoints, nil
 }
 
 func (repository *Repository) WebhookEndpoint(ctx context.Context, id string) (WebhookEndpoint, error) {
-	return loadWebhook(ctx, repository.pool, id)
+	endpoint, err := loadWebhook(ctx, repository.pool, id)
+	if err != nil {
+		return WebhookEndpoint{}, err
+	}
+	endpoints := []WebhookEndpoint{endpoint}
+	if err = attachWebhookExcludedActors(ctx, repository.pool, endpoints); err != nil {
+		return WebhookEndpoint{}, err
+	}
+	return endpoints[0], nil
 }
 
 func (repository *Repository) CreateWebhookEndpoint(ctx context.Context, actor string, input WebhookInput, allowLoopback bool) (WebhookEndpoint, error) {
@@ -140,11 +158,18 @@ VALUES($1,$2,$3,$4,NULLIF($5,''),$6,NULLIF($7,''),NULLIF($8,''),NULLIF($9,''))`,
 	if err = insertWebhookAudit(ctx, transaction, "user:"+actor, "webhook_create", identifier, fields.URL); err != nil {
 		return WebhookEndpoint{}, err
 	}
+	if err = replaceWebhookExcludedActors(ctx, transaction, identifier, fields.ExcludedActors); err != nil {
+		return WebhookEndpoint{}, err
+	}
 	endpoint, err := loadWebhook(ctx, transaction, identifier)
 	if err != nil {
 		return WebhookEndpoint{}, err
 	}
-	return endpoint, transaction.Commit(ctx)
+	endpoints := []WebhookEndpoint{endpoint}
+	if err = attachWebhookExcludedActors(ctx, transaction, endpoints); err != nil {
+		return WebhookEndpoint{}, err
+	}
+	return endpoints[0], transaction.Commit(ctx)
 }
 
 func (repository *Repository) UpdateWebhookEndpoint(ctx context.Context, actor, id string, input WebhookInput, allowLoopback bool) (WebhookEndpoint, error) {
@@ -188,11 +213,18 @@ WHERE id=$1`, id, fields.URL, fields.Description, fields.EventTypes, fields.Sect
 	if err = insertWebhookAudit(ctx, transaction, "user:"+actor, "webhook_update", id, fields.URL); err != nil {
 		return WebhookEndpoint{}, err
 	}
+	if err = replaceWebhookExcludedActors(ctx, transaction, id, fields.ExcludedActors); err != nil {
+		return WebhookEndpoint{}, err
+	}
 	endpoint, err := loadWebhook(ctx, transaction, id)
 	if err != nil {
 		return WebhookEndpoint{}, err
 	}
-	return endpoint, transaction.Commit(ctx)
+	endpoints := []WebhookEndpoint{endpoint}
+	if err = attachWebhookExcludedActors(ctx, transaction, endpoints); err != nil {
+		return WebhookEndpoint{}, err
+	}
+	return endpoints[0], transaction.Commit(ctx)
 }
 
 func (repository *Repository) SetWebhookEnabled(ctx context.Context, actor, id string, enabled bool) (WebhookEndpoint, error) {
@@ -467,6 +499,10 @@ func prepareWebhook(input WebhookInput, allowLoopback bool, currentSecret, curre
 	if err != nil {
 		return preparedWebhook{}, err
 	}
+	excluded, err := domain.NormalizeWebhookExcludedActors(input.ExcludedActors)
+	if err != nil {
+		return preparedWebhook{}, err
+	}
 	sectionID := strings.TrimSpace(input.SectionID)
 	if sectionID != "" && !identifierPatternMatches(sectionID) {
 		return preparedWebhook{}, domain.Invalid("Choose a section that exists")
@@ -497,7 +533,7 @@ func prepareWebhook(input WebhookInput, allowLoopback bool, currentSecret, curre
 	if secret == "" && value == "" {
 		return preparedWebhook{}, domain.Invalid("Add a signing secret or a custom header")
 	}
-	return preparedWebhook{URL: rawURL, Description: description, EventTypes: events, SectionID: sectionID, SigningSecret: secret, HeaderName: name, HeaderValue: value}, nil
+	return preparedWebhook{URL: rawURL, Description: description, EventTypes: events, SectionID: sectionID, ExcludedActors: excluded, SigningSecret: secret, HeaderName: name, HeaderValue: value}, nil
 }
 
 func identifierPatternMatches(value string) bool {
@@ -583,7 +619,7 @@ func deref(value *string) string {
 	return *value
 }
 
-const webhookSelect = `SELECT id,url,description,event_types,section_id,enabled,auto_disabled,consecutive_failures,
+const webhookSelect = `SELECT id,url,description,event_types,section_id,enabled,auto_disabled,consecutive_failures,skipped_events,
 (coalesce(signing_secret,'') <> ''), coalesce(custom_header_name,''), (coalesce(custom_header_value,'') <> ''), created_at, updated_at
 FROM webhook_endpoints`
 
@@ -600,9 +636,81 @@ func loadWebhook(ctx context.Context, queryer interface {
 
 func scanWebhook(row webhookScanner) (WebhookEndpoint, error) {
 	var endpoint WebhookEndpoint
-	err := row.Scan(&endpoint.ID, &endpoint.URL, &endpoint.Description, &endpoint.EventTypes, &endpoint.SectionID, &endpoint.Enabled, &endpoint.AutoDisabled, &endpoint.ConsecutiveFailures, &endpoint.SigningSecretSet, &endpoint.CustomHeaderName, &endpoint.CustomHeaderSet, &endpoint.CreatedAt, &endpoint.UpdatedAt)
+	err := row.Scan(&endpoint.ID, &endpoint.URL, &endpoint.Description, &endpoint.EventTypes, &endpoint.SectionID, &endpoint.Enabled, &endpoint.AutoDisabled, &endpoint.ConsecutiveFailures, &endpoint.SkippedEvents, &endpoint.SigningSecretSet, &endpoint.CustomHeaderName, &endpoint.CustomHeaderSet, &endpoint.CreatedAt, &endpoint.UpdatedAt)
 	if endpoint.EventTypes == nil {
 		endpoint.EventTypes = []string{}
 	}
+	if endpoint.ExcludedActors == nil {
+		endpoint.ExcludedActors = []domain.WebhookActorRef{}
+	}
 	return endpoint, err
+}
+
+func replaceWebhookExcludedActors(ctx context.Context, transaction pgx.Tx, endpointID string, actors []domain.WebhookActorRef) error {
+	if _, err := transaction.Exec(ctx, "DELETE FROM webhook_excluded_actors WHERE endpoint_id=$1", endpointID); err != nil {
+		return err
+	}
+	for _, actor := range actors {
+		if err := ensureExcludedActor(ctx, transaction, actor); err != nil {
+			return err
+		}
+		if _, err := transaction.Exec(ctx, "INSERT INTO webhook_excluded_actors(endpoint_id,kind,actor_id) VALUES($1,$2,$3)", endpointID, actor.Kind, actor.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func ensureExcludedActor(ctx context.Context, transaction pgx.Tx, actor domain.WebhookActorRef) error {
+	var exists bool
+	query := "SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)"
+	if actor.Kind == "agent" {
+		query = "SELECT EXISTS(SELECT 1 FROM agents WHERE id=$1)"
+	}
+	if err := transaction.QueryRow(ctx, query, actor.ID).Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		return domain.Invalid("Choose users or agents that exist")
+	}
+	return nil
+}
+
+func attachWebhookExcludedActors(ctx context.Context, queryer interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+}, endpoints []WebhookEndpoint) error {
+	if len(endpoints) == 0 {
+		return nil
+	}
+	ids := make([]string, len(endpoints))
+	index := make(map[string]int, len(endpoints))
+	for i, endpoint := range endpoints {
+		ids[i] = endpoint.ID
+		index[endpoint.ID] = i
+		endpoints[i].ExcludedActors = []domain.WebhookActorRef{}
+	}
+	rows, err := queryer.Query(ctx, `SELECT x.endpoint_id,x.kind,x.actor_id,
+coalesce(u.name,a.name,'') AS name
+FROM webhook_excluded_actors x
+LEFT JOIN users u ON x.kind='user' AND u.id=x.actor_id
+LEFT JOIN agents a ON x.kind='agent' AND a.id=x.actor_id
+WHERE x.endpoint_id = ANY($1)
+ORDER BY x.kind,x.actor_id`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var endpointID, kind, id, name string
+		if err = rows.Scan(&endpointID, &kind, &id, &name); err != nil {
+			return err
+		}
+		pos, ok := index[endpointID]
+		if !ok {
+			continue
+		}
+		ref := domain.WebhookActorRef{Kind: kind, ID: id, Name: name}
+		endpoints[pos].ExcludedActors = append(endpoints[pos].ExcludedActors, ref)
+	}
+	return rows.Err()
 }

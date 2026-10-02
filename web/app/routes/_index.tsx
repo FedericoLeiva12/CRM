@@ -200,6 +200,8 @@ export default function Workspace() {
               endpoints={webhooks}
               deliveries={deliveries}
               sections={sections}
+              users={users}
+              agents={agents}
               selectedId={selectedWebhookId}
               createOpen={webhookEditor}
               busy={busy}

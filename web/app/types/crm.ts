@@ -113,6 +113,11 @@ export interface CreatedInvite extends Invite {
 }
 export type WorkspaceView = 'records' | 'fields' | 'agents' | 'team' | 'webhooks';
 export type ModalKind = 'record' | 'field' | 'section' | 'agent' | 'delete' | 'revoke' | 'password';
+export interface WebhookActorRef {
+  kind: 'user' | 'agent';
+  id: string;
+  name?: string;
+}
 export interface WebhookEndpoint {
   id: string;
   url: string;
@@ -122,6 +127,8 @@ export interface WebhookEndpoint {
   enabled: boolean;
   auto_disabled: boolean;
   consecutive_failures: number;
+  skipped_events: number;
+  excluded_actors: WebhookActorRef[];
   signing_secret_set: boolean;
   custom_header_name: string;
   custom_header_set: boolean;

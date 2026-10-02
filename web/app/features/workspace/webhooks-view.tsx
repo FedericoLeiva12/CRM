@@ -3,7 +3,13 @@ import { Fragment } from 'react';
 import { Plus, RefreshCw, Webhook } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Modal } from '../../components/modal';
-import type { Section, WebhookDelivery, WebhookEndpoint } from '../../types/crm';
+import type {
+  Agent,
+  Section,
+  WebhookDelivery,
+  WebhookEndpoint,
+  WorkspaceUser,
+} from '../../types/crm';
 import { webhookEventLabel, webhookEvents } from './presentation';
 import type { workspaceAction } from './workspace.server';
 
@@ -11,6 +17,8 @@ interface Props {
   endpoints: WebhookEndpoint[];
   deliveries: WebhookDelivery[];
   sections: Section[];
+  users: WorkspaceUser[];
+  agents: Agent[];
   selectedId: string;
   createOpen: boolean;
   busy: boolean;
@@ -59,6 +67,16 @@ function authText(endpoint: WebhookEndpoint) {
   return parts.join(', ');
 }
 
+function excludedActorsText(endpoint: WebhookEndpoint) {
+  if (!endpoint.excluded_actors?.length) return 'None';
+  return endpoint.excluded_actors
+    .map((actor) => {
+      const label = actor.name?.trim() || actor.id;
+      return actor.kind === 'agent' ? `${label} (agent)` : label;
+    })
+    .join(', ');
+}
+
 function deliveryStatus(status: string) {
   if (status === 'succeeded') return 'Delivered';
   if (status === 'failed') return 'Failed';
@@ -70,6 +88,8 @@ export function WebhooksView({
   endpoints,
   deliveries,
   sections,
+  users,
+  agents,
   selectedId,
   createOpen,
   busy,
@@ -155,6 +175,14 @@ export function WebhooksView({
                 <dd>{sectionLabel(sections, endpoint.section_id)}</dd>
                 <dt>Authentication</dt>
                 <dd>{authText(endpoint)}</dd>
+                <dt>Exclude actors</dt>
+                <dd>{excludedActorsText(endpoint)}</dd>
+                {endpoint.skipped_events > 0 ? (
+                  <>
+                    <dt>Skipped</dt>
+                    <dd className="num">{endpoint.skipped_events}</dd>
+                  </>
+                ) : null}
               </dl>
               <div className="webhook-actions">
                 <Form method="post">
@@ -282,6 +310,8 @@ export function WebhooksView({
           <WebhookForm
             endpoint={editor}
             sections={sections}
+            users={users}
+            agents={agents}
             busy={busy}
             error={editorError}
             onCancel={() => {
@@ -341,6 +371,8 @@ function emptyEndpoint(): WebhookEndpoint {
     custom_header_set: false,
     created_at: '',
     updated_at: '',
+    skipped_events: 0,
+    excluded_actors: [],
     failure_limit: 10,
     max_attempts: 5,
   };
@@ -349,17 +381,25 @@ function emptyEndpoint(): WebhookEndpoint {
 function WebhookForm({
   endpoint,
   sections,
+  users,
+  agents,
   busy,
   error,
   onCancel,
 }: {
   endpoint: WebhookEndpoint;
   sections: Section[];
+  users: WorkspaceUser[];
+  agents: Agent[];
   busy: boolean;
   error?: string;
   onCancel: () => void;
 }) {
   const editing = endpoint.id !== '';
+  const excluded = new Set(
+    (endpoint.excluded_actors || []).map((actor) => `${actor.kind}:${actor.id}`),
+  );
+  const memberUsers = users.filter((user) => user.role === 'member' || user.role === 'admin');
   return (
     <Form method="post" className="modal-form" key={`${endpoint.id}:${endpoint.updated_at}`}>
       <input type="hidden" name="intent" value={editing ? 'webhook-update' : 'webhook-create'} />
@@ -411,6 +451,35 @@ function WebhookForm({
         </select>
         <small>Record, field, and timeline events outside this section are skipped.</small>
       </label>
+      <fieldset className="event-choices actor-choices">
+        <legend>Exclude events from these actors</legend>
+        <p className="muted actor-choices-help">
+          Events caused by a listed user or agent are not queued for this endpoint. Mentions of a
+          listed agent or user are still delivered.
+        </p>
+        <div>
+          {memberUsers.map((user) => (
+            <label className="choice" key={`user:${user.id}`}>
+              <input
+                type="checkbox"
+                name={`exclude:user:${user.id}`}
+                defaultChecked={excluded.has(`user:${user.id}`)}
+              />
+              {user.name || user.email}
+            </label>
+          ))}
+          {agents.map((agent) => (
+            <label className="choice" key={`agent:${agent.id}`}>
+              <input
+                type="checkbox"
+                name={`exclude:agent:${agent.id}`}
+                defaultChecked={excluded.has(`agent:${agent.id}`)}
+              />
+              {agent.name} (agent)
+            </label>
+          ))}
+        </div>
+      </fieldset>
       <label className="choice">
         <input type="checkbox" name="enabled" defaultChecked={endpoint.enabled} />
         Deliver events

@@ -442,6 +442,77 @@ VALUES('ssrf',$1,'',ARRAY['record.created'],true,'ssrf-secret-value')`, "https:/
 	if err = pool.QueryRow(ctx, "SELECT count(*) FROM audit WHERE action IN ('webhook_create','webhook_update') AND actor='user:admin'").Scan(&endpointAudits); err != nil || endpointAudits < 2 {
 		t.Fatal("endpoint changes were not audited", endpointAudits, err)
 	}
+
+	t.Run("excluded_actors", func(t *testing.T) {
+		filtered := call(devHandler, devSettings, "POST", "/api/webhooks", adminCookie, map[string]any{
+			"url": receiver.URL + "/excluded", "description": "Actor filter", "event_types": []string{"record.created"},
+			"section_id": "clients", "enabled": true, "signing_secret": secret,
+			"excluded_actors": []map[string]string{{"kind": "user", "id": "admin"}},
+		})
+		expect(filtered, 201)
+		filteredID := jsonID(t, filtered)
+		var listed []map[string]any
+		if err = json.Unmarshal(call(devHandler, devSettings, "GET", "/api/webhooks", adminCookie, nil).Body.Bytes(), &listed); err != nil {
+			t.Fatal(err)
+		}
+		var found bool
+		for _, item := range listed {
+			if item["id"] == filteredID {
+				actors, _ := item["excluded_actors"].([]any)
+				if len(actors) != 1 {
+					t.Fatalf("excluded_actors in list = %v", item["excluded_actors"])
+				}
+				found = true
+			}
+		}
+		if !found {
+			t.Fatal("filtered endpoint missing from list")
+		}
+		expect(call(devHandler, devSettings, "POST", "/api/sections/clients/records", memberCookie, map[string]any{"data": map[string]any{"name": "Member row"}}), 200)
+		var memberDeliveries int
+		if err = pool.QueryRow(ctx, "SELECT count(*) FROM webhook_deliveries WHERE endpoint_id=$1 AND event_type='record.created'", filteredID).Scan(&memberDeliveries); err != nil || memberDeliveries != 1 {
+			t.Fatalf("member delivery count = %d (%v)", memberDeliveries, err)
+		}
+		expect(call(devHandler, devSettings, "POST", "/api/sections/clients/records", adminCookie, map[string]any{"data": map[string]any{"name": "Admin row"}}), 200)
+		var adminDeliveries int
+		var skipped int64
+		if err = pool.QueryRow(ctx, "SELECT count(*) FROM webhook_deliveries WHERE endpoint_id=$1 AND event_type='record.created'", filteredID).Scan(&adminDeliveries); err != nil {
+			t.Fatal(err)
+		}
+		if err = pool.QueryRow(ctx, "SELECT skipped_events FROM webhook_endpoints WHERE id=$1", filteredID).Scan(&skipped); err != nil {
+			t.Fatal(err)
+		}
+		if adminDeliveries != 1 || skipped < 1 {
+			t.Fatalf("admin should be skipped: deliveries=%d skipped=%d", adminDeliveries, skipped)
+		}
+		expect(call(devHandler, devSettings, "POST", "/api/webhooks/"+filteredID+"/test", adminCookie, nil), 202)
+		var testDeliveries int
+		if err = pool.QueryRow(ctx, "SELECT count(*) FROM webhook_deliveries WHERE endpoint_id=$1 AND event_type='webhook.test'", filteredID).Scan(&testDeliveries); err != nil || testDeliveries != 1 {
+			t.Fatalf("test delivery count = %d (%v)", testDeliveries, err)
+		}
+		expect(call(devHandler, devSettings, "POST", "/api/webhooks", adminCookie, map[string]any{
+			"url": receiver.URL + "/bad-ex", "event_types": []string{"record.created"}, "enabled": true, "signing_secret": secret,
+			"excluded_actors": []map[string]string{{"kind": "agent", "id": "missing-agent"}},
+		}), 400)
+
+		mentionHook := call(devHandler, devSettings, "POST", "/api/webhooks", adminCookie, map[string]any{
+			"url": receiver.URL + "/mentions", "event_types": []string{"comment.mentioned"}, "enabled": true, "signing_secret": secret,
+			"excluded_actors": []map[string]string{{"kind": "user", "id": "member"}},
+		})
+		expect(mentionHook, 201)
+		mentionID := jsonID(t, mentionHook)
+		recordResp := call(devHandler, devSettings, "POST", "/api/sections/clients/records", adminCookie, map[string]any{"data": map[string]any{"name": "Mention target"}})
+		expect(recordResp, 200)
+		var mentionRecord map[string]string
+		json.Unmarshal(recordResp.Body.Bytes(), &mentionRecord)
+		comment := call(devHandler, devSettings, "POST", "/api/sections/clients/records/"+mentionRecord["id"]+"/comments", adminCookie, map[string]any{"body": "ping", "mentions": []string{"user:member"}})
+		expect(comment, 201)
+		var mentionDeliveries int
+		if err = pool.QueryRow(ctx, "SELECT count(*) FROM webhook_deliveries WHERE endpoint_id=$1 AND event_type='comment.mentioned'", mentionID).Scan(&mentionDeliveries); err != nil || mentionDeliveries != 1 {
+			t.Fatalf("mention to excluded principal should deliver: %d (%v)", mentionDeliveries, err)
+		}
+	})
+
 	if _, err = pool.Exec(ctx, "UPDATE webhook_deliveries SET created_at=now()-interval '40 days', status='succeeded' WHERE endpoint_id=$1", endpointID); err != nil {
 		t.Fatal(err)
 	}

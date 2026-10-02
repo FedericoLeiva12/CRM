@@ -109,6 +109,68 @@ func ValidateWebhookDescription(description string) error {
 	return nil
 }
 
+// WebhookActorRef identifies a user or agent excluded from an endpoint's deliveries.
+type WebhookActorRef struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+	Name string `json:"name,omitempty"`
+}
+
+func NormalizeWebhookExcludedActors(refs []WebhookActorRef) ([]WebhookActorRef, error) {
+	if len(refs) == 0 {
+		return nil, nil
+	}
+	seen := make(map[string]struct{}, len(refs))
+	clean := make([]WebhookActorRef, 0, len(refs))
+	for _, ref := range refs {
+		kind := strings.TrimSpace(ref.Kind)
+		id := strings.TrimSpace(ref.ID)
+		if kind != "user" && kind != "agent" {
+			return nil, Invalid("Choose users or agents to exclude")
+		}
+		if id == "" || len(id) > 200 || strings.ContainsAny(id, "\r\n\x00") {
+			return nil, Invalid("Choose users or agents to exclude")
+		}
+		key := kind + ":" + id
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		clean = append(clean, WebhookActorRef{Kind: kind, ID: id})
+	}
+	sort.Slice(clean, func(i, j int) bool {
+		if clean[i].Kind != clean[j].Kind {
+			return clean[i].Kind < clean[j].Kind
+		}
+		return clean[i].ID < clean[j].ID
+	})
+	return clean, nil
+}
+
+// ActorExcludedFromWebhook reports whether an endpoint should skip enqueueing this event
+// because the actor caused it. comment.mentioned is still delivered when the mentioned
+// principal is excluded (self-mention and wake-on-mention). webhook.test is never filtered.
+func ActorExcludedFromWebhook(eventType, actorKind, actorID, mentionedKind, mentionedID string, excluded map[string]struct{}) bool {
+	if eventType == EventWebhookTest {
+		return false
+	}
+	if actorKind != "user" && actorKind != "agent" {
+		return false
+	}
+	if len(excluded) == 0 {
+		return false
+	}
+	if _, ok := excluded[actorKind+":"+actorID]; !ok {
+		return false
+	}
+	if eventType == EventCommentMentioned && mentionedKind != "" && mentionedID != "" {
+		if _, ok := excluded[mentionedKind+":"+mentionedID]; ok {
+			return false
+		}
+	}
+	return true
+}
+
 func ValidateSigningSecret(secret string) error {
 	if secret == "" {
 		return nil

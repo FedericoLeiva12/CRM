@@ -4,21 +4,23 @@ import (
 	"net/http"
 	"strings"
 
+	"siracrm/internal/domain"
 	"siracrm/internal/store"
 	"siracrm/internal/webhooks"
 )
 
 type webhookBody struct {
-	URL                string   `json:"url"`
-	Description        string   `json:"description"`
-	EventTypes         []string `json:"event_types"`
-	SectionID          string   `json:"section_id"`
-	Enabled            bool     `json:"enabled"`
-	SigningSecret      string   `json:"signing_secret"`
-	ClearSigningSecret bool     `json:"clear_signing_secret"`
-	CustomHeaderName   string   `json:"custom_header_name"`
-	CustomHeaderValue  string   `json:"custom_header_value"`
-	ClearCustomHeader  bool     `json:"clear_custom_header"`
+	URL                string                   `json:"url"`
+	Description        string                   `json:"description"`
+	EventTypes         []string                 `json:"event_types"`
+	SectionID          string                   `json:"section_id"`
+	Enabled            bool                     `json:"enabled"`
+	ExcludedActors     []domain.WebhookActorRef `json:"excluded_actors"`
+	SigningSecret      string                   `json:"signing_secret"`
+	ClearSigningSecret bool                     `json:"clear_signing_secret"`
+	CustomHeaderName   string                   `json:"custom_header_name"`
+	CustomHeaderValue  string                   `json:"custom_header_value"`
+	ClearCustomHeader  bool                     `json:"clear_custom_header"`
 }
 
 type webhookView struct {
@@ -153,7 +155,8 @@ func decodeWebhook(writer http.ResponseWriter, request *http.Request) (webhookBo
 func webhookInput(body webhookBody) store.WebhookInput {
 	return store.WebhookInput{
 		URL: body.URL, Description: body.Description, EventTypes: body.EventTypes, SectionID: body.SectionID, Enabled: body.Enabled,
-		SigningSecret: body.SigningSecret, ClearSigningSecret: body.ClearSigningSecret,
+		ExcludedActors: body.ExcludedActors,
+		SigningSecret:  body.SigningSecret, ClearSigningSecret: body.ClearSigningSecret,
 		CustomHeaderName: body.CustomHeaderName, CustomHeaderValue: body.CustomHeaderValue, ClearCustomHeader: body.ClearCustomHeader,
 	}
 }

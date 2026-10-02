@@ -1092,6 +1092,11 @@ tbody tr:hover {
   font-weight: 500;
   margin-bottom: 4px;
 }
+.actor-choices-help {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.45;
+}
 .choice {
   display: flex;
   align-items: center;

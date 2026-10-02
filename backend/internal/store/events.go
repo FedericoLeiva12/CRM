@@ -154,11 +154,60 @@ func emit(ctx context.Context, tx pgx.Tx, event outboundEvent) (string, error) {
 		}
 		return identifier, nil
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO webhook_deliveries(outbox_id,endpoint_id,event_type)
-SELECT $1,e.id,$2 FROM webhook_endpoints e
-WHERE e.enabled AND NOT e.auto_disabled AND $2 = ANY(e.event_types)
-AND (e.section_id IS NULL OR e.section_id = NULLIF($3,''))`, identifier, event.Type, event.SectionID)
+	actorKind, actorID := splitActorRef(event.Actor)
+	mentionedKind, mentionedID := mentionPrincipal(event)
+	fanout := `WITH subscribed AS (
+  SELECT e.id FROM webhook_endpoints e
+  WHERE e.enabled AND NOT e.auto_disabled AND $1 = ANY(e.event_types)
+  AND (e.section_id IS NULL OR e.section_id = NULLIF($2,''))
+), deliver AS (
+  SELECT s.id FROM subscribed s
+  WHERE NOT (
+    $3 IN ('user','agent') AND EXISTS (
+      SELECT 1 FROM webhook_excluded_actors x
+      WHERE x.endpoint_id = s.id AND x.kind = $3 AND x.actor_id = $4
+    ) AND NOT (
+      $1 = 'comment.mentioned' AND $5 IN ('user','agent') AND $6 <> '' AND EXISTS (
+        SELECT 1 FROM webhook_excluded_actors x
+        WHERE x.endpoint_id = s.id AND x.kind = $5 AND x.actor_id = $6
+      )
+    )
+  )
+)`
+	fanoutArgs := []any{event.Type, event.SectionID, actorKind, actorID, mentionedKind, mentionedID}
+	if _, err = tx.Exec(ctx, fanout+`
+INSERT INTO webhook_deliveries(outbox_id,endpoint_id,event_type)
+SELECT $7,d.id,$1 FROM deliver d`, append(fanoutArgs, identifier)...); err != nil {
+		return "", err
+	}
+	_, err = tx.Exec(ctx, fanout+`
+UPDATE webhook_endpoints e
+SET skipped_events = e.skipped_events + 1, updated_at = now()
+FROM subscribed s
+WHERE e.id = s.id
+AND NOT EXISTS (SELECT 1 FROM deliver d WHERE d.id = s.id)`, fanoutArgs...)
 	return identifier, err
+}
+
+func splitActorRef(actor string) (kind, id string) {
+	kind, id, ok := strings.Cut(actor, ":")
+	if !ok || id == "" || (kind != "user" && kind != "agent") {
+		return "", ""
+	}
+	return kind, id
+}
+
+func mentionPrincipal(event outboundEvent) (kind, id string) {
+	if event.Type != domain.EventCommentMentioned {
+		return "", ""
+	}
+	mentioned, ok := event.Data["mentioned"].(map[string]any)
+	if !ok {
+		return "", ""
+	}
+	kind, _ = mentioned["kind"].(string)
+	id, _ = mentioned["id"].(string)
+	return kind, id
 }
 
 func lookupActor(ctx context.Context, tx pgx.Tx, actor string) (domain.EventActor, error) {
