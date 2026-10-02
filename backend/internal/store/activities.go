@@ -19,11 +19,15 @@ func authorFromActor(actor string) (domain.Author, error) {
 	return domain.Author{Kind: kind, ID: identifier}, nil
 }
 
-func insertActivity(ctx context.Context, tx pgx.Tx, sectionID, recordID string, author domain.Author, activityType string, occurredAt time.Time, summary, channel, ref string) error {
+func insertActivity(ctx context.Context, tx pgx.Tx, actor, sectionID, recordID string, author domain.Author, activityType string, occurredAt time.Time, summary, channel, ref string) error {
+	identifier := token.New()
 	_, err := tx.Exec(ctx, `INSERT INTO activities(id,section_id,record_id,type,occurred_at,summary,channel,ref,author_kind,author_id)
 		VALUES($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''),$9,$10)`,
-		token.New(), sectionID, recordID, activityType, occurredAt, summary, channel, ref, author.Kind, author.ID)
-	return err
+		identifier, sectionID, recordID, activityType, occurredAt, summary, channel, ref, author.Kind, author.ID)
+	if err != nil {
+		return err
+	}
+	return EmitTimelineEntry(ctx, tx, actor, sectionID, recordID, TimelineEntry{ID: identifier, Kind: activityType, Body: summary})
 }
 
 // logStatusChange appends a timeline entry when an existing record's status field changes.
@@ -47,7 +51,7 @@ func logStatusChange(ctx context.Context, tx pgx.Tx, fields []domain.Field, acto
 	if next == "" {
 		summary = fmt.Sprintf("Status cleared from %s", previous)
 	}
-	return insertActivity(ctx, tx, sectionID, recordID, author, "status_change", time.Now().UTC(), summary, "", "")
+	return insertActivity(ctx, tx, actor, sectionID, recordID, author, "status_change", time.Now().UTC(), summary, "", "")
 }
 
 func (repository *Repository) LogActivity(ctx context.Context, actor, sectionID, recordID, activityType, date, summary, channel, ref string) (domain.Activity, error) {
@@ -78,6 +82,9 @@ func (repository *Repository) LogActivity(ctx context.Context, actor, sectionID,
 		return domain.Activity{}, err
 	}
 	if _, err = transaction.Exec(ctx, "INSERT INTO audit(actor,action,section_id,record_id,detail) VALUES($1,'log_activity',$2,$3,$4)", actor, sectionID, recordID, activity.ID); err != nil {
+		return domain.Activity{}, err
+	}
+	if err = EmitTimelineEntry(ctx, transaction, actor, sectionID, recordID, TimelineEntry{ID: activity.ID, Kind: activity.Type, Body: activity.Summary}); err != nil {
 		return domain.Activity{}, err
 	}
 	if err = transaction.Commit(ctx); err != nil {

@@ -15,13 +15,25 @@ import { RecordsView } from '../features/workspace/records-view';
 import { FieldsView } from '../features/workspace/fields-view';
 import { AgentsView } from '../features/workspace/agents-view';
 import { TeamView } from '../features/workspace/team-view';
+import { WebhooksView } from '../features/workspace/webhooks-view';
 import { WorkspaceDialogs } from '../features/workspace/workspace-dialogs';
 import type { Agent, CRMRecord, ModalKind } from '../types/crm';
 export const loader = workspaceLoader;
 export const action = workspaceAction;
 export default function Workspace() {
-  const { sections, section, view, records, agents, users, invites, currentUser } =
-    useLoaderData<typeof loader>();
+  const {
+    sections,
+    section,
+    view,
+    records,
+    agents,
+    users,
+    invites,
+    webhooks,
+    deliveries,
+    selectedWebhookId,
+    currentUser,
+  } = useLoaderData<typeof loader>();
   const actionResult = useActionData<typeof action>();
   const navigation = useNavigation();
   const [, setParams] = useSearchParams();
@@ -30,6 +42,7 @@ export default function Workspace() {
   const [revoke, setRevoke] = useState<Agent | null>(null);
   const [token, setToken] = useState('');
   const [inviteLink, setInviteLink] = useState('');
+  const [webhookEditor, setWebhookEditor] = useState(false);
   const busy = navigation.state !== 'idle';
   useEffect(() => {
     if (actionResult?.ok) {
@@ -41,6 +54,10 @@ export default function Workspace() {
   const error = actionResult?.error;
   const presentation = viewPresentation(view, section);
   function openPrimaryAction() {
+    if (view === 'webhooks') {
+      setWebhookEditor(true);
+      return;
+    }
     if (presentation.actionModal === 'record') openRecord(null);
     else setModal(presentation.actionModal);
   }
@@ -153,6 +170,17 @@ export default function Workspace() {
                 setRevoke(agent);
                 setModal('revoke');
               }}
+            />
+          )}
+          {view === 'webhooks' && (
+            <WebhooksView
+              endpoints={webhooks}
+              deliveries={deliveries}
+              sections={sections}
+              selectedId={selectedWebhookId}
+              createOpen={webhookEditor}
+              busy={busy}
+              onCreateOpenChange={setWebhookEditor}
             />
           )}
         </div>

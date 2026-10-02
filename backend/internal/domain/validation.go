@@ -12,6 +12,8 @@ import (
 
 var identifierPattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,47}$`)
 
+func ValidIdentifier(value string) bool { return identifierPattern.MatchString(value) }
+
 // ValidationError contains a message safe to return to the person editing a record.
 type ValidationError struct{ Message string }
 

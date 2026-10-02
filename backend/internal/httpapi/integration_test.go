@@ -41,7 +41,7 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("Migration replay failed", err)
 	}
 	var migrationCount int
-	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 4 {
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 5 {
 		t.Fatal("Migration was not tracked exactly once", migrationCount, err)
 	}
 	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("a-long-test-password"), bcrypt.MinCost)
@@ -385,6 +385,14 @@ func TestTeamInvitations(t *testing.T) {
 		{"POST", "/api/invites", map[string]string{"email": "other@example.test", "role": "member"}},
 		{"PUT", "/api/users/admin/role", map[string]string{"role": "member"}},
 		{"DELETE", "/api/users/admin", nil},
+		{"GET", "/api/webhooks", nil},
+		{"POST", "/api/webhooks", map[string]any{"url": "https://hooks.example.test/sira", "event_types": []string{"record.created"}, "signing_secret": "member-secret-value"}},
+		{"PUT", "/api/webhooks/missing", nil},
+		{"DELETE", "/api/webhooks/missing", nil},
+		{"POST", "/api/webhooks/missing/test", nil},
+		{"POST", "/api/webhooks/missing/enable", nil},
+		{"POST", "/api/webhooks/missing/disable", nil},
+		{"GET", "/api/webhooks/missing/deliveries", nil},
 	} {
 		denied := callAs(forbidden.method, forbidden.path, memberCookie, forbidden.body)
 		expect(denied, 403)

@@ -8,7 +8,9 @@ The backend uses idiomatic Go `cmd/` and `internal/` packages. `cmd/server` comp
 
 `domain` owns CRM models, field type constants and validation. It imports only the standard library and knows nothing about HTTP, MCP or PostgreSQL. User-facing validation failures have a specific error type.
 
-`store` owns SQL and transactional invariants, grouped into sections, records, agents, accounts, and team. It maps database conflicts and missing rows to stable errors. Record saves lock the section while loading its schema and validating values; adding a required field takes the same lock. A write and its audit event commit together. `records.data` stays the JSONB source of truth. Each write also replaces that record's rows in `record_values`, a typed projection indexed by section, field, and value, so equality, range, emptiness, and sort stay indexed as fields are added. `activities` is a per-record timeline with an open `type` string; a comment is a later entry of type `comment` and is not a separate table yet. `record_links` stores one generic link from a source record to a target section. Password replacement uses compare-and-swap and revokes all sessions in the same transaction. Removing a user deletes that account, and session rows cascade with it. Role changes lock administrator rows so the workspace cannot lose its last administrator.
+`store` owns SQL and transactional invariants, grouped into sections, records, agents, accounts, team, and webhooks. It maps database conflicts and missing rows to stable errors. Record saves lock the section while loading its schema and validating values; adding a required field takes the same lock. A write, its audit event, and its webhook outbox rows commit together. `records.data` stays the JSONB source of truth. Each write also replaces that record's rows in `record_values`, a typed projection indexed by section, field, and value, so equality, range, emptiness, and sort stay indexed as fields are added. `activities` is a per-record timeline with an open `type` string; a comment is a later entry of type `comment` and is not a separate table yet. Writing an activity calls `EmitTimelineEntry` on that same transaction. `record_links` stores one generic link from a source record to a target section. Password replacement uses compare-and-swap and revokes all sessions in the same transaction. Removing a user deletes that account, and session rows cascade with it. Role changes lock administrator rows so the workspace cannot lose its last administrator.
+
+`webhooks` delivers the outbox. It does not decide which events exist. The worker claims due rows with `FOR UPDATE SKIP LOCKED`, signs and posts them, then records the result. It refuses redirects and dials only addresses that pass the SSRF policy.
 
 `auth` orchestrates password verification, credential generation, server-side sessions and bounded login throttling. `auth/token` is an independent utility package used for hashes and random identifiers; it does not depend on the authentication service.
 
@@ -19,9 +21,10 @@ The backend uses idiomatic Go `cmd/` and `internal/` packages. `cmd/server` comp
 Dependency direction:
 
 ```text
-cmd/server → config, database, auth, httpapi, store
-httpapi → auth, store, domain, mcpserver
+cmd/server → config, database, auth, httpapi, store, webhooks
+httpapi → auth, store, domain, mcpserver, webhooks
 mcpserver → store, domain
+webhooks → store, domain
  auth → store, domain, auth/token
 store → domain, auth/token, PostgreSQL driver
 domain, config, auth/token → standard library
@@ -33,7 +36,7 @@ The repository remains a concrete PostgreSQL adapter because the current integra
 
 Remix routes compose feature views and expose loader/action exports. The server-only `workspace.server.ts` module handles browser mutations, typed API calls and form conversion. `invite.$token.tsx` accepts an invitation without an existing session. API cookies stay in server calls; database credentials never reach browser code.
 
-Workspace presentation is split into `records-view`, `fields-view`, `agents-view`, `team-view`, `sidebar`, `workspace-dialogs`, and small editor/cell components. Presentation maps replace repeated nested conditional labels. Records-view owns search/filter state and is keyed by section, which resets those controls when navigation changes the section. Administrator navigation is hidden for members; the API still enforces the role.
+Workspace presentation is split into `records-view`, `fields-view`, `agents-view`, `team-view`, `webhooks-view`, `sidebar`, `workspace-dialogs`, and small editor/cell components. Presentation maps replace repeated nested conditional labels. Records-view owns search/filter state and is keyed by section, which resets those controls when navigation changes the section. Administrator navigation is hidden for members, and administrator views redirect members to the records page. The API still enforces the role.
 
 Shared Radix dialog and permission checkbox components stay in `components`. CRM request/response shapes and field types live in `types/crm.ts`. API response types describe the trusted Go service boundary; Go performs authoritative validation on every write.
 
@@ -47,7 +50,7 @@ Shared Radix dialog and permission checkbox components stay in `components`. CRM
 - `make check` runs backend lint/vet/tests and frontend lint/format/typecheck/production build.
 - CI runs the same linters and builds, and provides an isolated PostgreSQL database for integration tests.
 
-The integration test intentionally recreates the public schema. Set `TEST_DATABASE_URL` only to an isolated disposable database. Unit tests cover domain validation, secure origin configuration and limiter limits/expiry. Integration tests cover browser authentication, CSRF, password changes, session revocation, registry changes, dynamic fields, MCP grant isolation, token revocation, invitations, member restrictions, last-administrator protection, and transactional audit events.
+The integration test intentionally recreates the public schema. Set `TEST_DATABASE_URL` only to an isolated disposable database. Unit tests cover domain validation, secure origin configuration and limiter limits/expiry. Integration tests cover browser authentication, CSRF, password changes, session revocation, registry changes, dynamic fields, MCP grant isolation, token revocation, invitations, member restrictions, last-administrator protection, transactional audit events, and outbound webhook delivery.
 
 Prefer descriptive names and small functions with a clear responsibility. Comments explain security boundaries, concurrency rules or non-obvious decisions; they should not narrate what a straightforward assignment or loop already says. Keep transport-specific logic out of domain and persistence packages. Add meaningful regression tests when changing authorization or transactional behavior.
 

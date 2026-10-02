@@ -9,12 +9,13 @@ import (
 )
 
 type Config struct {
-	DatabaseURL   string
-	AppOrigin     string
-	AdminEmail    string
-	AdminPassword string
-	Address       string
-	SecureCookies bool
+	DatabaseURL           string
+	AppOrigin             string
+	AdminEmail            string
+	AdminPassword         string
+	Address               string
+	SecureCookies         bool
+	AllowLoopbackWebhooks bool
 }
 
 func Load() (Config, error) {
@@ -26,7 +27,18 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	settings.SecureCookies = strings.HasPrefix(settings.AppOrigin, "https://")
+	settings.AllowLoopbackWebhooks = loopbackWebhooksAllowed(settings.AppOrigin)
 	return settings, nil
+}
+
+// Loopback webhook URLs are accepted only for the local HTTP development origin.
+func loopbackWebhooksAllowed(origin string) bool {
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := parsed.Hostname()
+	return parsed.Scheme == "http" && (host == "localhost" || host == "127.0.0.1")
 }
 func ValidateOrigin(origin string) error {
 	parsed, err := url.Parse(origin)

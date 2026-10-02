@@ -16,6 +16,13 @@ export function viewPresentation(view: WorkspaceView, section: Section) {
       actionLabel: '',
       actionModal: 'record' as ModalKind,
     };
+  if (view === 'webhooks')
+    return {
+      title: 'Webhooks',
+      description: 'Send workspace events to the systems you choose.',
+      actionLabel: 'Add webhook',
+      actionModal: 'record' as ModalKind,
+    };
   if (view === 'fields')
     return {
       title: 'Fields & sections',
@@ -44,7 +51,29 @@ export const actionMessages: Record<string, string> = {
   'revoke-invite': 'Invitation revoked.',
   role: 'Role updated.',
   'remove-user': 'Person removed.',
+  'webhook-create': 'Webhook saved.',
+  'webhook-update': 'Webhook saved.',
+  'webhook-delete': 'Webhook deleted.',
+  'webhook-enable': 'Webhook enabled.',
+  'webhook-disable': 'Webhook disabled.',
+  'webhook-test': 'Test event queued.',
 };
+export const webhookEvents = [
+  { id: 'record.created', label: 'Record created' },
+  { id: 'record.updated', label: 'Record updated' },
+  { id: 'record.deleted', label: 'Record deleted' },
+  { id: 'section.created', label: 'Section created' },
+  { id: 'field.created', label: 'Field created' },
+  { id: 'timeline.entry_created', label: 'Timeline entry' },
+] as const;
+const extraEventLabels: Record<string, string> = { 'webhook.test': 'Test' };
+export function webhookEventLabel(eventType: string) {
+  return (
+    webhookEvents.find((event) => event.id === eventType)?.label ||
+    extraEventLabels[eventType] ||
+    eventType
+  );
+}
 export function roleLabel(role: string) {
   return role === 'admin' ? 'Administrator' : 'Member';
 }

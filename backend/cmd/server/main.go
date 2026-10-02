@@ -15,6 +15,7 @@ import (
 	"siracrm/internal/database"
 	"siracrm/internal/httpapi"
 	"siracrm/internal/store"
+	"siracrm/internal/webhooks"
 )
 
 func main() {
@@ -45,22 +46,32 @@ func run() error {
 	}
 	application := httpapi.New(repository, authentication, settings)
 	server := &http.Server{Addr: settings.Address, Handler: application.Handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 20 * time.Second, WriteTimeout: 30 * time.Second, IdleTimeout: 60 * time.Second}
+	signalContext, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stopSignals()
+	workerDone := make(chan struct{})
+	go func() {
+		defer close(workerDone)
+		webhooks.NewWorker(repository, webhooks.Options{AllowLoopback: settings.AllowLoopbackWebhooks}).Run(signalContext)
+	}()
 	listenerErrors := make(chan error, 1)
 	go func() {
 		log.Printf("Sira API listening on %s", settings.Address)
 		listenerErrors <- server.ListenAndServe()
 	}()
-	signalContext, stopSignals := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stopSignals()
 	select {
 	case err = <-listenerErrors:
+		stopSignals()
 		if !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
-		return nil
 	case <-signalContext.Done():
 	}
 	shutdownContext, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
-	return server.Shutdown(shutdownContext)
+	shutdownErr := server.Shutdown(shutdownContext)
+	select {
+	case <-workerDone:
+	case <-shutdownContext.Done():
+	}
+	return shutdownErr
 }

@@ -95,12 +95,14 @@ func (repository *Repository) SaveRecord(ctx context.Context, actor, sectionID, 
 		return "", err
 	}
 	action := "create"
+	eventType := domain.EventRecordCreated
 	var previous map[string]any
 	if recordID == "" {
 		recordID = token.New()
 		_, err = transaction.Exec(ctx, "INSERT INTO records(id,section_id,data) VALUES($1,$2,$3)", recordID, sectionID, encoded)
 	} else {
 		action = "update"
+		eventType = domain.EventRecordUpdated
 		if err = transaction.QueryRow(ctx, "SELECT data FROM records WHERE id=$1 AND section_id=$2 FOR UPDATE", recordID, sectionID).Scan(&previous); err != nil {
 			return "", classifyMissingRow(err)
 		}
@@ -117,8 +119,11 @@ func (repository *Repository) SaveRecord(ctx context.Context, actor, sectionID, 
 			return "", err
 		}
 	}
-	// Keep the write and its audit entry atomic: neither may succeed independently.
+	// Keep the write, its audit entry, and the webhook outbox atomic.
 	if _, err = transaction.Exec(ctx, "INSERT INTO audit(actor,action,section_id,record_id) VALUES($1,$2,$3,$4)", actor, action, sectionID, recordID); err != nil {
+		return "", err
+	}
+	if _, err = emitRecord(ctx, transaction, eventType, actor, sectionID, recordID, previous, values); err != nil {
 		return "", err
 	}
 	return recordID, transaction.Commit(ctx)
@@ -172,6 +177,9 @@ func (repository *Repository) UpdateRecord(ctx context.Context, actor, sectionID
 	if _, err = transaction.Exec(ctx, "INSERT INTO audit(actor,action,section_id,record_id,detail) VALUES($1,'update',$2,$3,'partial')", actor, sectionID, recordID); err != nil {
 		return domain.Record{}, err
 	}
+	if _, err = emitRecord(ctx, transaction, domain.EventRecordUpdated, actor, sectionID, recordID, record.Data, merged); err != nil {
+		return domain.Record{}, err
+	}
 	if err = transaction.Commit(ctx); err != nil {
 		return domain.Record{}, err
 	}
@@ -185,17 +193,24 @@ func (repository *Repository) DeleteRecord(ctx context.Context, actor, sectionID
 		return err
 	}
 	defer func() { _ = transaction.Rollback(ctx) }()
+	var data map[string]any
+	err = transaction.QueryRow(ctx, "SELECT data FROM records WHERE section_id=$1 AND id=$2 FOR UPDATE", sectionID, recordID).Scan(&data)
+	if err != nil {
+		return classifyMissingRow(err)
+	}
 	if _, err = transaction.Exec(ctx, "DELETE FROM activities WHERE section_id=$1 AND record_id=$2", sectionID, recordID); err != nil {
 		return err
 	}
-	result, err := transaction.Exec(ctx, "DELETE FROM records WHERE section_id=$1 AND id=$2", sectionID, recordID)
-	if err != nil {
+	if _, err = transaction.Exec(ctx, "DELETE FROM records WHERE section_id=$1 AND id=$2", sectionID, recordID); err != nil {
 		return err
 	}
-	if result.RowsAffected() == 0 {
-		return ErrNotFound
-	}
 	if _, err = transaction.Exec(ctx, "INSERT INTO audit(actor,action,section_id,record_id) VALUES($1,'delete',$2,$3)", actor, sectionID, recordID); err != nil {
+		return err
+	}
+	if data == nil {
+		data = map[string]any{}
+	}
+	if _, err = emit(ctx, transaction, outboundEvent{Type: domain.EventRecordDeleted, Actor: actor, SectionID: sectionID, RecordID: recordID, Data: map[string]any{"fields": data}}); err != nil {
 		return err
 	}
 	return transaction.Commit(ctx)

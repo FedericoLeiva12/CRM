@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   UserPlus,
   Users,
+  Webhook,
 } from 'lucide-react';
 import type { ModalKind, Section, WorkspaceView } from '../../types/crm';
 interface Props {
@@ -74,6 +75,12 @@ export function Sidebar({ sections, section, view, admin, onOpenModal }: Props) 
         <Link to="/?view=team" className={`nav-item ${view === 'team' ? 'active' : ''}`}>
           <UserPlus size={18} />
           Team
+        </Link>
+      )}
+      {admin && (
+        <Link to="/?view=webhooks" className={`nav-item ${view === 'webhooks' ? 'active' : ''}`}>
+          <Webhook size={18} />
+          Webhooks
         </Link>
       )}
       <button className="nav-item" onClick={() => onOpenModal('password')}>

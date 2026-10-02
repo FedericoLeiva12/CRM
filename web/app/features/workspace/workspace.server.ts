@@ -7,6 +7,8 @@ import type {
   CRMRecord,
   Invite,
   Section,
+  WebhookDelivery,
+  WebhookEndpoint,
   WorkspaceUser,
   WorkspaceView,
 } from '../../types/crm';
@@ -19,6 +21,28 @@ function textValue(form: FormData, name: string): string {
 function checkedValue(form: FormData, name: string): boolean {
   return form.get(name) === 'on';
 }
+const webhookEventIds = [
+  'record.created',
+  'record.updated',
+  'record.deleted',
+  'section.created',
+  'field.created',
+  'timeline.entry_created',
+];
+function webhookBody(form: FormData) {
+  return {
+    url: textValue(form, 'url'),
+    description: textValue(form, 'description'),
+    event_types: webhookEventIds.filter((eventType) => form.get(`event:${eventType}`) === 'on'),
+    section_id: textValue(form, 'section_id'),
+    enabled: checkedValue(form, 'enabled'),
+    signing_secret: textValue(form, 'signing_secret'),
+    clear_signing_secret: checkedValue(form, 'clear_signing_secret'),
+    custom_header_name: textValue(form, 'custom_header_name'),
+    custom_header_value: textValue(form, 'custom_header_value'),
+    clear_custom_header: checkedValue(form, 'clear_custom_header'),
+  };
+}
 
 export async function workspaceLoader({ request }: LoaderFunctionArgs) {
   const currentUser = await api<WorkspaceUser>(request, '/me');
@@ -28,19 +52,40 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
     sections.find((section) => section.id === searchParams.get('section')) || sections[0];
   const requestedView = searchParams.get('view');
   const view: WorkspaceView =
-    requestedView === 'fields' || requestedView === 'agents' || requestedView === 'team'
+    requestedView === 'fields' ||
+    requestedView === 'agents' ||
+    requestedView === 'team' ||
+    requestedView === 'webhooks'
       ? requestedView
       : 'records';
   if (view !== 'records' && currentUser.role !== 'admin') throw redirect('/');
-  const [records, agents, users, invites] = await Promise.all([
+  const webhooks = view === 'webhooks' ? await api<WebhookEndpoint[]>(request, '/webhooks') : [];
+  const requestedEndpoint = searchParams.get('endpoint') || '';
+  const selectedWebhook = webhooks.find((endpoint) => endpoint.id === requestedEndpoint);
+  const [records, agents, users, invites, deliveries] = await Promise.all([
     view === 'records' && section
       ? api<CRMRecord[]>(request, `/sections/${section.id}/records`)
       : Promise.resolve([]),
     view === 'agents' ? api<Agent[]>(request, '/agents') : Promise.resolve([]),
     view === 'team' ? api<WorkspaceUser[]>(request, '/users') : Promise.resolve([]),
     view === 'team' ? api<Invite[]>(request, '/invites') : Promise.resolve([]),
+    selectedWebhook
+      ? api<WebhookDelivery[]>(request, `/webhooks/${selectedWebhook.id}/deliveries`)
+      : Promise.resolve([]),
   ]);
-  return json({ sections, section, view, records, agents, users, invites, currentUser });
+  return json({
+    sections,
+    section,
+    view,
+    records,
+    agents,
+    users,
+    invites,
+    webhooks,
+    deliveries,
+    selectedWebhookId: selectedWebhook?.id || '',
+    currentUser,
+  });
 }
 
 async function saveRelationship(request: Request, form: FormData, sectionID: string) {
@@ -108,6 +153,7 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
   try {
     let createdToken: string | undefined;
     let inviteLink: string | undefined;
+    let endpointId: string | undefined;
     switch (intent) {
       case 'logout':
         return await signOut(request);
@@ -184,6 +230,31 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
       case 'remove-user':
         await api(request, `/users/${textValue(form, 'id')}`, { method: 'DELETE' });
         break;
+      case 'webhook-create':
+        await api(request, '/webhooks', {
+          method: 'POST',
+          body: JSON.stringify(webhookBody(form)),
+        });
+        break;
+      case 'webhook-update':
+        await api(request, `/webhooks/${textValue(form, 'id')}`, {
+          method: 'PUT',
+          body: JSON.stringify(webhookBody(form)),
+        });
+        break;
+      case 'webhook-delete':
+        await api(request, `/webhooks/${textValue(form, 'id')}`, { method: 'DELETE' });
+        break;
+      case 'webhook-enable':
+        await api(request, `/webhooks/${textValue(form, 'id')}/enable`, { method: 'POST' });
+        break;
+      case 'webhook-disable':
+        await api(request, `/webhooks/${textValue(form, 'id')}/disable`, { method: 'POST' });
+        break;
+      case 'webhook-test':
+        endpointId = textValue(form, 'id');
+        await api(request, `/webhooks/${endpointId}/test`, { method: 'POST' });
+        break;
       default:
         throw new Error('Unknown action');
     }
@@ -192,6 +263,7 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
       intent,
       token: createdToken,
       inviteLink,
+      endpointId,
       error: undefined as string | undefined,
     });
   } catch (error) {
@@ -202,6 +274,7 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
         intent,
         token: undefined as string | undefined,
         inviteLink: undefined as string | undefined,
+        endpointId: undefined as string | undefined,
         error: error instanceof Error ? error.message : 'Unable to save',
       },
       { status: 400 },

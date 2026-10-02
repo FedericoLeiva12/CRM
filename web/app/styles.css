@@ -1022,6 +1022,128 @@ tbody tr:hover {
     padding-top: 55px;
   }
 }
+.webhook-card.selected {
+  border-color: #176b55;
+}
+.webhook-url {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+.webhook-description {
+  margin: -8px 0 4px;
+  color: #374a42;
+  line-height: 1.5;
+}
+.webhook-facts {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 16px 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.webhook-facts dt {
+  color: #526c58;
+}
+.webhook-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.webhook-status {
+  flex: none;
+  font-size: 13px;
+  font-weight: 500;
+}
+.webhook-status.is-live {
+  color: #176b55;
+}
+.webhook-status.is-paused,
+.delivery-table .is-failed {
+  color: #9b3f34;
+}
+.webhook-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.webhook-actions .secondary,
+.delivery-log .secondary {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-decoration: none;
+}
+.webhook-actions .danger-text {
+  min-height: 44px;
+  padding: 0 8px;
+}
+.delivery-log {
+  margin-top: 8px;
+}
+.webhook-log-target {
+  margin: -8px 0 14px;
+  overflow-wrap: anywhere;
+}
+.delivery-scroll {
+  overflow-x: auto;
+}
+.delivery-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.delivery-table th,
+.delivery-table td {
+  padding: 10px 12px 10px 0;
+  border-bottom: 1px solid #e3e9e4;
+  vertical-align: top;
+  text-align: left;
+}
+.delivery-table th {
+  color: #526c58;
+  font-weight: 500;
+}
+.delivery-table .num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.delivery-response {
+  margin: 0;
+  max-width: 36ch;
+  overflow-wrap: anywhere;
+  color: #374a42;
+  line-height: 1.45;
+}
+.event-choices {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.event-choices legend {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-weight: 500;
+}
+.choice input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #176b55;
+}
 @media (max-width: 1100px) {
   .sidebar {
     width: 210px;
@@ -1215,6 +1337,58 @@ tbody tr:hover {
   .person-row .danger-text,
   .role-form button {
     width: 100%;
+  }
+  .webhook-facts {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+  .webhook-facts dd {
+    margin-bottom: 10px;
+  }
+  .webhook-url {
+    white-space: normal;
+  }
+  .webhook-card .panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .delivery-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+  .delivery-table,
+  .delivery-table tbody,
+  .delivery-table tr,
+  .delivery-table td {
+    display: block;
+    width: 100%;
+  }
+  .delivery-table tr {
+    padding: 12px 0;
+    border-bottom: 1px solid #e3e9e4;
+  }
+  .delivery-table td {
+    border: 0;
+    padding: 2px 0;
+    text-align: left;
+  }
+  .delivery-table td::before {
+    content: attr(data-label);
+    display: block;
+    color: #526c58;
+    font-size: 12px;
+  }
+  .delivery-table .num {
+    text-align: left;
+  }
+  .delivery-response {
+    max-width: none;
+  }
+  .delivery-scroll {
+    overflow-x: visible;
   }
   .login {
     display: flex;

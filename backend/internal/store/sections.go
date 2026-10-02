@@ -71,6 +71,9 @@ func (repository *Repository) CreateSection(ctx context.Context, actor, identifi
 	if _, err = transaction.Exec(ctx, "INSERT INTO audit(actor,action,section_id) VALUES($1,'create_section',$2)", actor, identifier); err != nil {
 		return err
 	}
+	if _, err = emit(ctx, transaction, outboundEvent{Type: domain.EventSectionCreated, Actor: actor, SectionID: identifier, Data: map[string]any{"id": identifier, "name": name}}); err != nil {
+		return err
+	}
 	return transaction.Commit(ctx)
 }
 func (repository *Repository) AddField(ctx context.Context, actor, sectionID string, field domain.Field) error {
@@ -102,6 +105,9 @@ func (repository *Repository) AddField(ctx context.Context, actor, sectionID str
 	}
 	// record_id stores the field identifier; schema rows are not record mutations.
 	if _, err = transaction.Exec(ctx, "INSERT INTO audit(actor,action,section_id,record_id) VALUES($1,'add_field',$2,$3)", actor, sectionID, field.ID); err != nil {
+		return err
+	}
+	if _, err = emit(ctx, transaction, outboundEvent{Type: domain.EventFieldCreated, Actor: actor, SectionID: sectionID, Data: map[string]any{"field": map[string]any{"id": field.ID, "label": field.Label, "type": field.Type, "required": field.Required}}}); err != nil {
 		return err
 	}
 	return transaction.Commit(ctx)

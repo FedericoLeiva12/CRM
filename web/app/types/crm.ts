@@ -70,8 +70,39 @@ export interface CreatedInvite extends Invite {
   token: string;
   link: string;
 }
-export type WorkspaceView = 'records' | 'fields' | 'agents' | 'team';
+export type WorkspaceView = 'records' | 'fields' | 'agents' | 'team' | 'webhooks';
 export type ModalKind = 'record' | 'field' | 'section' | 'agent' | 'delete' | 'revoke' | 'password';
+export interface WebhookEndpoint {
+  id: string;
+  url: string;
+  description: string;
+  event_types: string[];
+  section_id: string | null;
+  enabled: boolean;
+  auto_disabled: boolean;
+  consecutive_failures: number;
+  signing_secret_set: boolean;
+  custom_header_name: string;
+  custom_header_set: boolean;
+  created_at: string;
+  updated_at: string;
+  failure_limit: number;
+  max_attempts: number;
+}
+export interface WebhookDelivery {
+  id: number;
+  event_id: string;
+  event_type: string;
+  status: string;
+  attempt_count: number;
+  status_code: number | null;
+  latency_ms: number | null;
+  response: string;
+  next_attempt_at: string;
+  created_at: string;
+  updated_at: string;
+  max_attempts: number;
+}
 export interface CreatedAgent {
   id: string;
   token: string;

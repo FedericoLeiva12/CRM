@@ -12,6 +12,7 @@ An extensible, single-workspace CRM with a Go API, PostgreSQL, Remix v2, Tailwin
 - One-time agent token display, hashed tokens at rest, independent read/write grants per section and immediate token revocation on subsequent requests.
 - New sections automatically appear in permission settings and MCP discovery. All new permissions default to denied.
 - Record mutations are transactionally audited, with agent identity recorded.
+- Generic outbound webhooks. Administrators subscribe an https endpoint to workspace events. Delivery is asynchronous from a transactional outbox.
 - Non-root application containers, private API/database services, persistent storage and Caddy HTTPS.
 
 ## Release status
@@ -79,7 +80,56 @@ Open http://localhost:3000. Versioned schema migrations are bundled into the Go 
 
 Administrators open **Team**, enter an email and a role, and receive a one-time link such as `https://your-domain/invite/sira_inv_…`. Copy it then; only a SHA-256 hash is stored, and Sira does not send email. The link expires after 7 days, works once, and can be revoked while it is pending. Inviting an address again replaces an expired invitation. The invitee chooses a name and a password (14–72 bytes) and is signed in.
 
-**Administrator** can do everything in the workspace, including team management, agent tokens, and sections and fields. **Member** can view and edit records in every section. The API rejects member calls to administrator routes. The workspace must keep one administrator, and nobody can remove their own account. Removing someone else ends their sessions immediately. User and invite changes are audited.
+**Administrator** can do everything in the workspace, including team management, agent tokens, webhooks, and sections and fields. **Member** can view and edit records in every section. The API rejects member calls to administrator routes, and the workspace redirects members away from administrator pages. The workspace must keep one administrator, and nobody can remove their own account. Removing someone else ends their sessions immediately. User and invite changes are audited.
+
+## Webhooks
+
+Administrators open **Webhooks** and add an endpoint. Members cannot open the page or call `/api/webhooks`. Each endpoint has an https URL, an optional description, one or more event types, an optional section filter, and at least one authentication method:
+
+- A signing secret. The worker sends `X-CRM-Signature: sha256=<hex>` where the hex is HMAC-SHA256 of `<unix seconds>.<raw body>` using that secret, plus `X-CRM-Timestamp` with the same unix seconds.
+- An optional custom header name and secret value, sent exactly as stored. Use this for a static sender key such as `Authorization: Bearer …`.
+
+Secrets are write-only after save. Leave the secret fields blank to keep them, or check the remove box to clear one. An endpoint must keep a signing secret or a custom header.
+
+Subscribed types are `record.created`, `record.updated`, `record.deleted`, `section.created`, `field.created`, and `timeline.entry_created`. `webhook.test` is not a subscription. **Send test event** queues one test for that endpoint, including while it is disabled. A section filter skips events for other sections. Events with no section, such as a workspace-wide change that does not name one, are delivered only to endpoints with no section filter.
+
+The body is JSON, schema version 1:
+
+```json
+{
+  "schema_version": 1,
+  "id": "evt_…",
+  "type": "record.updated",
+  "occurred_at": "2026-10-02T19:00:00.000Z",
+  "actor": { "kind": "user", "id": "…", "name": "Ada" },
+  "section": { "id": "clients", "name": "Clients" },
+  "record_id": "…",
+  "data": {
+    "changed_field_ids": ["status"],
+    "fields": { "status": "Active" }
+  }
+}
+```
+
+`section` and `record_id` are null when they do not apply. `actor.kind` is `user`, `agent`, or `system`. `data` is always an object:
+
+| Event | `data` |
+| --- | --- |
+| `record.created` | `fields` with the stored values |
+| `record.updated` | `changed_field_ids` and `fields` containing only the new values. A cleared field is listed in `changed_field_ids` and omitted from `fields` |
+| `record.deleted` | `fields` with the values that were removed |
+| `section.created` | `id`, `name` |
+| `field.created` | `field` with `id`, `label`, `type`, `required` |
+| `timeline.entry_created` | `entry_id`, `kind`, `body` truncated to 500 characters |
+| `webhook.test` | `message` |
+
+Every request also sends `Content-Type: application/json`, `User-Agent: SiraCRM-Webhooks/1`, `X-CRM-Event` with the event type, and `X-CRM-Idempotency-Key` set to the event id. Delivery is at least once, so receivers should treat that key as the idempotency key. Redirects are not followed. The request times out after 10 seconds. Failures retry up to 5 attempts with exponential backoff from 5 seconds to 5 minutes. Ten consecutive failures, excluding test events, disable the endpoint and the page shows it as paused. Enabling it clears that pause. Finished deliveries and outbox rows that nothing still references are deleted after 30 days.
+
+The outbox row is inserted in the same database transaction as the record, section, field, or timeline change. The API returns before delivery. Saving an activity, including an automatic status change, calls `store.EmitTimelineEntry` before commit. A later comment can use that same hook.
+
+Production accepts https only and blocks private, loopback, link-local, multicast, and other non-public addresses when the endpoint is saved and again when the worker connects. Local development (`APP_ORIGIN=http://localhost:3000` or `http://127.0.0.1:3000`) may use `http://localhost` or `http://127.0.0.1` so a receiver on the same machine can be tested. Hostnames are resolved and the worker dials a checked address.
+
+Endpoint create, update, delete, enable, disable, and automatic pause are written to `audit`.
 
 ## Connect an MCP client
 
@@ -183,16 +233,17 @@ backend/
       token/                 # Credential generation and hashing
     httpapi/                 # Routes, middleware and small HTTP handlers
     mcpserver/               # Authenticated MCP transport and dynamic tools
+    webhooks/                # Outbound delivery worker, signatures and SSRF checks
 web/app/
   routes/                    # Remix route composition, sign-in and invitation acceptance
-  features/workspace/        # Records, fields, agents, team, editors and server actions
+  features/workspace/        # Records, fields, agents, team, webhooks, editors and server actions
   components/                # Shared accessible Radix controls
   types/                     # Typed CRM transport models
 ```
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) for dependency boundaries, extension guidelines and quality tooling.
 
-The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection.
+The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection. Webhook tests cover signatures, custom headers, retry and backoff, automatic pause, outbox durability, member denial, and the SSRF block.
 
 ## Verify
 
