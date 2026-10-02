@@ -91,7 +91,7 @@ Administrators open **Webhooks** and add an endpoint. Members cannot open the pa
 
 Secrets are write-only after save. Leave the secret fields blank to keep them, or check the remove box to clear one. An endpoint must keep a signing secret or a custom header.
 
-Subscribed types are `record.created`, `record.updated`, `record.deleted`, `section.created`, `field.created`, and `timeline.entry_created`. `webhook.test` is not a subscription. **Send test event** queues one test for that endpoint, including while it is disabled. A section filter skips events for other sections. Events with no section, such as a workspace-wide change that does not name one, are delivered only to endpoints with no section filter.
+Subscribed types are `record.created`, `record.updated`, `record.deleted`, `section.created`, `field.created`, `timeline.entry_created`, and `comment.mentioned`. `webhook.test` is not a subscription. **Send test event** queues one test for that endpoint, including while it is disabled. A section filter skips events for other sections. Events with no section, such as a workspace-wide change that does not name one, are delivered only to endpoints with no section filter.
 
 The body is JSON, schema version 1:
 
@@ -121,11 +121,12 @@ The body is JSON, schema version 1:
 | `section.created` | `id`, `name` |
 | `field.created` | `field` with `id`, `label`, `type`, `required` |
 | `timeline.entry_created` | `entry_id`, `kind`, `body` truncated to 500 characters |
+| `comment.mentioned` | `entry_id`, `section` (`id`, `name`), `record_id`, `mentioned` (`kind` `user` or `agent`, `id`, `handle`), `author` (`kind`, `id`, `name`, `handle`), `body` truncated to 500 characters, `parent_id` (`null` for a top-level comment) |
 | `webhook.test` | `message` |
 
 Every request also sends `Content-Type: application/json`, `User-Agent: SiraCRM-Webhooks/1`, `X-CRM-Event` with the event type, and `X-CRM-Idempotency-Key` set to the event id. Delivery is at least once, so receivers should treat that key as the idempotency key. Redirects are not followed. The request times out after 10 seconds. Failures retry up to 5 attempts with exponential backoff from 5 seconds to 5 minutes. Ten consecutive failures, excluding test events, disable the endpoint and the page shows it as paused. Enabling it clears that pause. Finished deliveries and outbox rows that nothing still references are deleted after 30 days.
 
-The outbox row is inserted in the same database transaction as the record, section, field, or timeline change. The API returns before delivery. Saving an activity, including an automatic status change, calls `store.EmitTimelineEntry` before commit. A later comment can use that same hook.
+The outbox row is inserted in the same database transaction as the record, section, field, or timeline change. The API returns before delivery. Saving an activity, including an automatic status change, calls `store.EmitTimelineEntry` before commit. A comment calls the same hook and then queues one `comment.mentioned` event per newly mentioned user or agent, in the same transaction. An external agent can subscribe to `comment.mentioned` to be woken when it is @mentioned.
 
 Production accepts https only and blocks private, loopback, link-local, multicast, and other non-public addresses when the endpoint is saved and again when the worker connects. Local development (`APP_ORIGIN=http://localhost:3000` or `http://127.0.0.1:3000`) may use `http://localhost` or `http://127.0.0.1` so a receiver on the same machine can be tested. Hostnames are resolved and the worker dials a checked address.
 
@@ -156,8 +157,9 @@ Tools are generated per authorized section:
 | Permission | Tools |
 | --- | --- |
 | Always available | `sections_schema` (only accessible section definitions) |
-| Read | `<section>_list`, `<section>_get`, `<section>_activities` |
-| Write | `<section>_save`, `<section>_update`, `<section>_delete`, `<section>_log_activity` |
+| Always available | `mentions_list`, `mentions_mark_read` (the calling agent's own mentions) |
+| Read | `<section>_list`, `<section>_get`, `<section>_activities`, `<section>_comments` |
+| Write | `<section>_save`, `<section>_update`, `<section>_delete`, `<section>_log_activity`, `<section>_comment` |
 | Read and write | `<section>_convert` |
 | Manage schema | `sections_create`, `fields_add` |
 
@@ -199,7 +201,7 @@ Argument shapes for the record tools, using `prospects` as an example of any sec
 {"id":"RECORD_ID","type":"email_enviado","date":"2026-10-02","summary":"Sent the introduction","channel":"email","ref":"thread-id"}
 ```
 
-`prospects_log_activity` — `id`, `type`, `date`, `summary`; optional `channel` and `ref`. `type` is any short string, not a fixed list. `date` is `YYYY-MM-DD` or RFC3339. The author is the authenticated agent or user. A future comment is the same entry with `type` `comment`.
+`prospects_log_activity` — `id`, `type`, `date`, `summary`; optional `channel` and `ref`. `type` is any short string, not a fixed list. `date` is `YYYY-MM-DD` or RFC3339. The author is the authenticated agent or user. An entry with `type` `comment` is stored as a comment, so it can be mentioned in and replied to like any other.
 
 ```json
 {"id":"RECORD_ID"}
@@ -212,6 +214,38 @@ Argument shapes for the record tools, using `prospects` as an example of any sec
 ```
 
 `prospects_convert` — `id`, `target` section id; optional `mapping` (source field id to target field id), `overrides`, and `status`. Fields that share an id are copied first, then `mapping`, then `overrides`. `status`, when present, is written to the source record's `status` field. The same source cannot be converted into the same target section twice. The response is `{source, target}`, and each record includes `links`. There is no stored `prospect_id` or `client_id`; either id is the linked record id.
+
+### Comments and @mentions
+
+A comment is a timeline entry of type `comment` on any record, in any section. It has an author (user or agent), a plain-text body of up to 4000 characters with `` `code` `` and `**bold**`, `created_at`, an optional `edited_at`, and an optional `parent_id` for one level of replies. Authors edit and delete their own comments; administrators can delete any. Deleting a comment that has replies leaves a "deleted" placeholder so the thread stays readable.
+
+Every user and agent has a unique, stable `@handle` (1–32 characters of `a-z 0-9 _ -`). It is derived from the name for agents and the name or email for users, and a number is appended on a collision. Users and agents share one namespace. A handle counts as a mention when it starts the text or follows a non-word character, so `me@example.test` and paths are ignored, as are code spans and fences. Mentions are stored structurally, up to 20 per comment, and each one is a notification for that user or agent. An agent is only mentioned if it can read the section. Editing a comment replaces its mention set; only newly mentioned principals are notified. The identifier `mentions` is reserved and cannot be used for a section.
+
+In the web app, the record dialog shows a composer with `@` autocomplete of the team and of agents that can read the section. Mentions render as chips, and the timeline interleaves comments with other activity, newest first, with reply, edit and delete. The bell in the header lists the current user's mentions, links to the record, and marks them read.
+
+```json
+{"id":"RECORD_ID","body":"@agent-name please check this, cc @ana-lopez","parent_id":"OPTIONAL_COMMENT_ID","mentions":["agent:AGENT_ID"]}
+```
+
+`prospects_comment` — `id`, `body`; optional `parent_id` (a top-level comment on the same record) and `mentions` (ids, `user:<id>` or `agent:<id>`), in addition to @handles in `body`. Needs write on the section. Returns `{comment, unresolved_mentions}`; unresolved entries are handles or ids that matched nobody who can read the section. The comment is not rejected.
+
+```json
+{"id":"RECORD_ID","limit":50,"cursor":"OPTIONAL"}
+```
+
+`prospects_comments` — `id`; optional `limit` (1–200, default 50) and `cursor`. Needs read. Returns `{comments, next_cursor}` with top-level comments newest first and `replies` oldest first.
+
+```json
+{"unread_only":true,"limit":100}
+```
+
+`mentions_list` — optional `unread_only` and `limit` (1–500, default 100). Returns `{mentions, unread_count}`. Each mention has `id`, `entry_id`, `section_id`, `section_name`, `record_id`, `record_name`, `parent_id`, `author`, `body`, `created_at`, and `read_at`. An agent only sees mentions in sections it can currently read.
+
+```json
+{"ids":["MENTION_ID"]}
+```
+
+`mentions_mark_read` — `ids`. Returns `{marked}`. Only the caller's own mentions change.
 
 ## Extend the CRM
 
