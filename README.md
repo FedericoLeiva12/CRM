@@ -78,7 +78,7 @@ Open http://localhost:3000. Versioned schema migrations are bundled into the Go 
 
 1. Sign in and open **Agent access** → **Connect agent**.
 2. Give the agent a name. Copy the token while it is displayed; it cannot be retrieved later.
-3. Select read and/or write per section and save. Write access includes creation, complete replacement, and permanent deletion. Read and write are independent.
+3. Select read and/or write per section, and turn on **Manage schema** only when the agent should add sections and fields. Write access includes creation, complete replacement, and permanent deletion. Read, write, and schema management are independent. Manage schema starts off.
 4. Configure an MCP client that supports Streamable HTTP and Authorization headers:
 
 ```json
@@ -101,10 +101,13 @@ Tools are generated per authorized section:
 | Always available | `sections_schema` (only accessible section definitions) |
 | Read | `<section>_list` |
 | Write | `<section>_save`, `<section>_delete` |
+| Manage schema | `sections_create`, `fields_add` |
 
 A save with no `id` creates a record. A save with an `id` replaces its complete data; omit optional values to clear them. Use `sections_schema` first for field identifiers, types and required flags. Record lists return the latest 500 records; search/filter in the UI works within those 500. Paginated queries are an extension point for larger datasets.
 
-After adding a section or changing grants, refresh the client's tool list. Permissions are checked again on each tool invocation. Revoked tokens fail authentication on the next HTTP request; requests already in progress may finish.
+`sections_create` takes the same `id` and `name` as the admin form. `fields_add` takes `section`, `id`, `label`, `type` (`text`, `email`, `number`, `date`, or `boolean`), and `required`. These tools use the same validation as the admin UI: a new required field is rejected while the section has records, and definitions cannot be renamed, deleted, or have their type changed. Each change is audited with the agent identity. Creating a section does not grant read or write on it, including for the agent that created it. Those grants stay denied until an administrator saves them.
+
+After adding a section, changing the schema, or changing grants, refresh the client's tool list. The server rebuilds tools on each request and sends `notifications/tools/list_changed` when the list changes. Permissions are checked again on each tool invocation. Revoked tokens fail authentication on the next HTTP request; requests already in progress may finish.
 
 Example save arguments:
 
@@ -141,7 +144,7 @@ web/app/
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) for dependency boundaries, extension guidelines and quality tooling.
 
-The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation.
+The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed.
 
 ## Verify
 

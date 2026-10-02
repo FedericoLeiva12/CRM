@@ -28,7 +28,9 @@ export function AgentsView({
           <h2>You set the boundaries.</h2>
           <p>
             Read access lets agents retrieve records. Write access lets them create, replace, and
-            delete records. New sections are always disabled until granted.
+            delete records. Manage schema lets them add sections and fields. A new section stays
+            closed for every agent, including the one that created it, until you grant read or
+            write.
           </p>
         </div>
         <code>/mcp</code>
@@ -75,6 +77,19 @@ export function AgentsView({
               >
                 Revoke token
               </button>
+            </div>
+            <div className="schema-permission">
+              <div>
+                <b>Manage schema</b>
+                <p>
+                  Create sections and add fields. Starts off, and does not include record access.
+                </p>
+              </div>
+              <CheckControl
+                name="manage_schema"
+                checked={agent.manage_schema}
+                label={`Manage schema for ${agent.name}`}
+              />
             </div>
             <div className="permissions-header">
               <span>Section</span>

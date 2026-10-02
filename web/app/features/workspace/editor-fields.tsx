@@ -95,7 +95,7 @@ export function AgentInputs() {
         <input name="name" required maxLength={80} placeholder="e.g. Sales assistant" />
       </label>
       <p className="muted">
-        Your token will be shown once. All section permissions start disabled.
+        Your token will be shown once. Section access and schema management start disabled.
       </p>
     </>
   );

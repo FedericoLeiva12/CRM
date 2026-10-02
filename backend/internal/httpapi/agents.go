@@ -9,7 +9,8 @@ type agentRequest struct {
 	Name string `json:"name"`
 }
 type permissionsRequest struct {
-	Permissions []domain.Permission `json:"permissions"`
+	Permissions  []domain.Permission `json:"permissions"`
+	ManageSchema bool                `json:"manage_schema"`
 }
 
 func (server *Server) listAgents(writer http.ResponseWriter, request *http.Request) {
@@ -44,7 +45,7 @@ func (server *Server) setPermissions(writer http.ResponseWriter, request *http.R
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
-	if err := server.repository.SetPermissions(request.Context(), request.PathValue("id"), input.Permissions); err != nil {
+	if err := server.repository.SetPermissions(request.Context(), request.PathValue("id"), input.Permissions, input.ManageSchema); err != nil {
 		writeServiceError(writer, err)
 		return
 	}

@@ -24,15 +24,25 @@ func (repository *Repository) CanAccess(ctx context.Context, agentID, sectionID 
 	}
 	return canRead
 }
+
+// CanManageSchema is independent of section read and write. Missing agents and database failures deny access.
+func (repository *Repository) CanManageSchema(ctx context.Context, agentID string) bool {
+	var allowed bool
+	err := repository.pool.QueryRow(ctx, "SELECT can_manage_schema FROM agents WHERE id=$1", agentID).Scan(&allowed)
+	if err != nil {
+		return false
+	}
+	return allowed
+}
 func (repository *Repository) ListAgents(ctx context.Context) ([]domain.Agent, error) {
-	rows, err := repository.pool.Query(ctx, "SELECT id,name FROM agents ORDER BY created_at")
+	rows, err := repository.pool.Query(ctx, "SELECT id,name,can_manage_schema FROM agents ORDER BY created_at")
 	if err != nil {
 		return nil, err
 	}
 	agents := []domain.Agent{}
 	for rows.Next() {
 		var agent domain.Agent
-		if err = rows.Scan(&agent.ID, &agent.Name); err != nil {
+		if err = rows.Scan(&agent.ID, &agent.Name, &agent.ManageSchema); err != nil {
 			rows.Close()
 			return nil, err
 		}
@@ -93,12 +103,15 @@ func (repository *Repository) RevokeAgent(ctx context.Context, agentID string) e
 	}
 	return nil
 }
-func (repository *Repository) SetPermissions(ctx context.Context, agentID string, permissions []domain.Permission) error {
+func (repository *Repository) SetPermissions(ctx context.Context, agentID string, permissions []domain.Permission, manageSchema bool) error {
 	transaction, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = transaction.Rollback(ctx) }()
+	if _, err = transaction.Exec(ctx, "UPDATE agents SET can_manage_schema=$2 WHERE id=$1", agentID, manageSchema); err != nil {
+		return err
+	}
 	for _, permission := range permissions {
 		_, err = transaction.Exec(ctx, `INSERT INTO permissions(agent_id,section_id,can_read,can_write) VALUES($1,$2,$3,$4)
  ON CONFLICT(agent_id,section_id) DO UPDATE SET can_read=excluded.can_read,can_write=excluded.can_write`, agentID, permission.SectionID, permission.Read, permission.Write)

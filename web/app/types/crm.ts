@@ -23,6 +23,7 @@ export interface Permission {
 export interface Agent {
   id: string;
   name: string;
+  manage_schema: boolean;
   permissions: Permission[];
 }
 export type WorkspaceView = 'records' | 'fields' | 'agents';

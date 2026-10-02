@@ -40,8 +40,8 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("Migration replay failed", err)
 	}
 	var migrationCount int
-	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 1 {
-		t.Fatal("Migration was not tracked exactly once")
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 2 {
+		t.Fatal("Migration was not tracked exactly once", migrationCount, err)
 	}
 	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("a-long-test-password"), bcrypt.MinCost)
 	pool.Exec(ctx, "INSERT INTO users(id,email,password_hash) VALUES('admin','admin@example.test',$1)", string(passwordHash))
@@ -111,8 +111,13 @@ func TestIntegration(t *testing.T) {
 	expect(response, 200)
 	response = rpc("tools/list", map[string]any{})
 	expect(response, 200)
-	if strings.Contains(response.Body.String(), "clients_list") {
-		t.Fatal("Default deny failed")
+	if strings.Contains(response.Body.String(), "clients_list") || strings.Contains(response.Body.String(), "sections_create") || strings.Contains(response.Body.String(), "fields_add") {
+		t.Fatal("Default deny failed", response.Body.String())
+	}
+	response = rpc("tools/call", map[string]any{"name": "sections_create", "arguments": map[string]any{"id": "vendors", "name": "Vendors"}})
+	expect(response, 200)
+	if !strings.Contains(response.Body.String(), "error") {
+		t.Fatal("Schema management was allowed by default", response.Body.String())
 	}
 	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "clients", Read: true, Write: false}}}, true), 200)
 	response = rpc("tools/list", map[string]any{})
@@ -153,6 +158,70 @@ func TestIntegration(t *testing.T) {
 	expect(response, 200)
 	if strings.Contains(response.Body.String(), "clients_list") {
 		t.Fatal("Live permission revocation failed")
+	}
+	// Schema management is a separate grant. It uses the same validation as the admin UI.
+	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"manage_schema": true}, true), 200)
+	response = rpc("tools/list", map[string]any{})
+	expect(response, 200)
+	if !strings.Contains(response.Body.String(), "sections_create") || !strings.Contains(response.Body.String(), "fields_add") {
+		t.Fatal("Schema tools missing after grant", response.Body.String())
+	}
+	uiInvalid := call("POST", "/api/sections", map[string]string{"id": "Bad", "name": "Vendors"}, true)
+	mcpInvalid := rpc("tools/call", map[string]any{"name": "sections_create", "arguments": map[string]any{"id": "Bad", "name": "Vendors"}})
+	expect(uiInvalid, 400)
+	expect(mcpInvalid, 200)
+	if !strings.Contains(uiInvalid.Body.String(), "Use a valid identifier and section name") || !strings.Contains(mcpInvalid.Body.String(), "Use a valid identifier and section name") {
+		t.Fatal("Section validation diverged", uiInvalid.Body.String(), mcpInvalid.Body.String())
+	}
+	response = rpc("tools/call", map[string]any{"name": "sections_create", "arguments": map[string]any{"id": "vendors", "name": "Vendors"}})
+	expect(response, 200)
+	if strings.Contains(response.Body.String(), `"isError":true`) || strings.Contains(response.Body.String(), `"error"`) {
+		t.Fatal("Schema create failed", response.Body.String())
+	}
+	response = call("GET", "/api/agents", nil, true)
+	expect(response, 200)
+	if !strings.Contains(response.Body.String(), `"manage_schema":true`) || !strings.Contains(response.Body.String(), `"section_id":"vendors","read":false,"write":false`) {
+		t.Fatal("Created section was not denied", response.Body.String())
+	}
+	response = rpc("tools/list", map[string]any{})
+	expect(response, 200)
+	if strings.Contains(response.Body.String(), "vendors_list") || strings.Contains(response.Body.String(), "vendors_save") {
+		t.Fatal("Creating a section granted record tools", response.Body.String())
+	}
+	const requiredFieldMessage = "New fields must be optional while records exist"
+	uiRequired := call("POST", "/api/sections/clients/fields", map[string]any{"id": "priority", "label": "Priority", "type": "text", "required": true}, true)
+	mcpRequired := rpc("tools/call", map[string]any{"name": "fields_add", "arguments": map[string]any{"section": "clients", "id": "priority", "label": "Priority", "type": "text", "required": true}})
+	expect(uiRequired, 400)
+	expect(mcpRequired, 200)
+	if !strings.Contains(uiRequired.Body.String(), requiredFieldMessage) || !strings.Contains(mcpRequired.Body.String(), requiredFieldMessage) {
+		t.Fatal("Required-field validation diverged", uiRequired.Body.String(), mcpRequired.Body.String())
+	}
+	uiType := call("POST", "/api/sections/vendors/fields", map[string]any{"id": "kind", "label": "Kind", "type": "file", "required": false}, true)
+	mcpType := rpc("tools/call", map[string]any{"name": "fields_add", "arguments": map[string]any{"section": "vendors", "id": "kind", "label": "Kind", "type": "file", "required": false}})
+	expect(uiType, 400)
+	expect(mcpType, 200)
+	if !strings.Contains(uiType.Body.String(), "Unsupported field type") || !strings.Contains(mcpType.Body.String(), "Unsupported field type") {
+		t.Fatal("Field type validation diverged", uiType.Body.String(), mcpType.Body.String())
+	}
+	response = rpc("tools/call", map[string]any{"name": "fields_add", "arguments": map[string]any{"section": "vendors", "id": "region", "label": "Region", "type": "text", "required": true}})
+	expect(response, 200)
+	if strings.Contains(response.Body.String(), `"isError":true`) {
+		t.Fatal("Optional-section required field was rejected", response.Body.String())
+	}
+	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"manage_schema": false, "permissions": []domain.Permission{{SectionID: "vendors", Read: true}}}, true), 200)
+	response = rpc("tools/list", map[string]any{})
+	expect(response, 200)
+	if strings.Contains(response.Body.String(), "sections_create") || strings.Contains(response.Body.String(), "fields_add") || !strings.Contains(response.Body.String(), "vendors_list") {
+		t.Fatal("Schema revocation or tool refresh failed", response.Body.String())
+	}
+	response = rpc("tools/call", map[string]any{"name": "fields_add", "arguments": map[string]any{"section": "vendors", "id": "tier", "label": "Tier", "type": "text", "required": false}})
+	expect(response, 200)
+	if !strings.Contains(response.Body.String(), "error") {
+		t.Fatal("Revoked schema management still worked", response.Body.String())
+	}
+	var schemaAudits int
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM audit WHERE actor=$1 AND ((action='create_section' AND section_id='vendors') OR (action='add_field' AND section_id='vendors' AND record_id='region'))", "agent:"+agent["id"]).Scan(&schemaAudits); err != nil || schemaAudits != 2 {
+		t.Fatal("Schema audit missing", schemaAudits, err)
 	}
 	expect(call("DELETE", "/api/agents/"+agent["id"], nil, true), 200)
 	expect(rpc("tools/list", map[string]any{}), 401)

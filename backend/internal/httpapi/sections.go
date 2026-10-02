@@ -23,7 +23,7 @@ func (server *Server) createSection(writer http.ResponseWriter, request *http.Re
 	if !decodeJSON(writer, request, &input) {
 		return
 	}
-	if err := server.repository.CreateSection(request.Context(), input.ID, input.Name); err != nil {
+	if err := server.repository.CreateSection(request.Context(), "user:"+userID(request), input.ID, input.Name); err != nil {
 		writeServiceError(writer, err)
 		return
 	}
@@ -34,7 +34,7 @@ func (server *Server) addField(writer http.ResponseWriter, request *http.Request
 	if !decodeJSON(writer, request, &field) {
 		return
 	}
-	if err := server.repository.AddField(request.Context(), request.PathValue("section"), field); err != nil {
+	if err := server.repository.AddField(request.Context(), "user:"+userID(request), request.PathValue("section"), field); err != nil {
 		writeServiceError(writer, err)
 		return
 	}

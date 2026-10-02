@@ -14,6 +14,35 @@ type saveArguments struct {
 type deleteArguments struct {
 	ID string `json:"id"`
 }
+type createSectionArguments struct {
+	ID   string `json:"id" jsonschema:"Section identifier: a lowercase letter followed by lowercase letters, digits, or underscores"`
+	Name string `json:"name" jsonschema:"Display name, 1–80 characters"`
+}
+type addFieldArguments struct {
+	Section  string           `json:"section" jsonschema:"Section identifier"`
+	ID       string           `json:"id" jsonschema:"Field identifier: a lowercase letter followed by lowercase letters, digits, or underscores"`
+	Label    string           `json:"label" jsonschema:"Display label, 1–80 characters"`
+	Type     domain.FieldType `json:"type" jsonschema:"One of text, email, number, date, boolean"`
+	Required bool             `json:"required" jsonschema:"Rejected while the section already has records"`
+}
+
+func (handler *Handler) registerSchemaManagementTools(server *mcp.Server, agentID string) {
+	mcp.AddTool(server, &mcp.Tool{Name: "sections_create", Description: "Create a section with a required name field. Does not grant read or write on the new section. Definitions cannot be renamed, deleted, or have their type changed."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments createSectionArguments) (*mcp.CallToolResult, any, error) {
+		if !handler.repository.CanManageSchema(ctx, agentID) {
+			return nil, nil, errPermissionDenied
+		}
+		err := handler.repository.CreateSection(ctx, "agent:"+agentID, arguments.ID, arguments.Name)
+		return nil, map[string]string{"id": arguments.ID, "name": arguments.Name}, toolError(err)
+	})
+	mcp.AddTool(server, &mcp.Tool{Name: "fields_add", Description: "Add a field to a section using the same rules as the admin UI. New required fields are rejected while records exist."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments addFieldArguments) (*mcp.CallToolResult, any, error) {
+		if !handler.repository.CanManageSchema(ctx, agentID) {
+			return nil, nil, errPermissionDenied
+		}
+		field := domain.Field{ID: arguments.ID, Label: arguments.Label, Type: arguments.Type, Required: arguments.Required}
+		err := handler.repository.AddField(ctx, "agent:"+agentID, arguments.Section, field)
+		return nil, field, toolError(err)
+	})
+}
 
 func (handler *Handler) registerReadTool(server *mcp.Server, agentID string, section domain.Section) {
 	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_list", Description: "List up to 500 most recently updated records in " + section.Name}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {

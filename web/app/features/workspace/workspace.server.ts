@@ -58,6 +58,7 @@ async function savePermissions(request: Request, form: FormData) {
   await api(request, `/agents/${textValue(form, 'id')}/permissions`, {
     method: 'PUT',
     body: JSON.stringify({
+      manage_schema: checkedValue(form, 'manage_schema'),
       permissions: sections.map((section) => ({
         section_id: section.id,
         read: checkedValue(form, `${section.id}:read`),

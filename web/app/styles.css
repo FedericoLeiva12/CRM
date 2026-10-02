@@ -783,6 +783,21 @@ tbody tr:hover {
   font-size: 12px;
   min-height: 32px;
 }
+.schema-permission {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 0 16px;
+  border-bottom: 1px solid #e3e9e4;
+}
+.schema-permission p {
+  margin-top: 4px;
+  max-width: 62ch;
+  color: #526c58;
+  font-size: 13px;
+  line-height: 1.5;
+}
 .permissions-header,
 .permission-row {
   display: grid;
@@ -1067,7 +1082,8 @@ tbody tr:hover {
   .agent-intro code {
     display: none;
   }
-  .agent-save {
+  .agent-save,
+  .schema-permission {
     flex-direction: column;
     align-items: flex-start;
   }

@@ -43,6 +43,11 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	}
 	server := mcp.NewServer(&mcp.Implementation{Name: "sira-crm", Version: "1.0.0"}, nil)
 	handler.registerSchemaTool(server, agentID)
+	// Schema tools are registered from the current grant. The next request rebuilds the list,
+	// and AddTool emits notifications/tools/list_changed for a connected session.
+	if handler.repository.CanManageSchema(request.Context(), agentID) {
+		handler.registerSchemaManagementTools(server, agentID)
+	}
 	for _, section := range sections {
 		if handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.ReadAccess) {
 			handler.registerReadTool(server, agentID, section)

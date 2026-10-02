@@ -35,9 +35,10 @@ type Permission struct {
 	Write     bool   `json:"write"`
 }
 type Agent struct {
-	ID          string       `json:"id"`
-	Name        string       `json:"name"`
-	Permissions []Permission `json:"permissions"`
+	ID           string       `json:"id"`
+	Name         string       `json:"name"`
+	ManageSchema bool         `json:"manage_schema"`
+	Permissions  []Permission `json:"permissions"`
 }
 
 // Access distinguishes independent read and write grants; write does not imply read.

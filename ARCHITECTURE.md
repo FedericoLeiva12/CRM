@@ -14,7 +14,7 @@ The backend uses idiomatic Go `cmd/` and `internal/` packages. `cmd/server` comp
 
 `httpapi` translates typed request bodies into service/repository calls. The route registry declares session requirements explicitly. Middleware validates browser origins and authenticates sessions; handlers receive the authenticated user identity through a typed context key. Error handling returns safe validation messages while logging unexpected database errors only on the server.
 
-`mcpserver` independently authenticates agent tokens, derives discovery from the current section registry and grants, then invokes the same repository and validation as HTTP. It never imports HTTP handlers. Discovery is not authorization: each tool checks access again at invocation. Database failures deny access. Read and write grants are independent.
+`mcpserver` independently authenticates agent tokens, derives discovery from the current section registry and grants, then invokes the same repository and validation as HTTP. It never imports HTTP handlers. Discovery is not authorization: each tool checks access again at invocation. Database failures deny access. Read, write, and schema-management grants are independent. Schema management defaults to denied and does not grant record access on sections the agent creates.
 
 Dependency direction:
 
