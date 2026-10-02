@@ -1,0 +1,51 @@
+# Coolify + Traefik terminates TLS. Nothing publishes host ports.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: sira
+      POSTGRES_USER: sira
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sira -d sira"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgres://sira:${POSTGRES_PASSWORD:?}@db:5432/sira?sslmode=disable
+      APP_ORIGIN: ${APP_ORIGIN:?}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:?}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?}
+    depends_on:
+      db:
+        condition: service_healthy
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  web:
+    build: ./web
+    environment:
+      API_URL: http://api:8080
+      APP_ORIGIN: ${APP_ORIGIN:?}
+    depends_on: [api]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      SITE_ADDRESS: ":80"
+    volumes:
+      - ./infra/Caddyfile.coolify:/etc/caddy/Caddyfile:ro
+    depends_on: [web, api]
+    restart: unless-stopped
+volumes:
+  postgres_data:

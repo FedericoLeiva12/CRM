@@ -37,6 +37,21 @@ Caddy provisions and renews certificates for public domains. PostgreSQL and the 
 
 For a local Compose deployment, set `SITE_ADDRESS=http://localhost` and `APP_ORIGIN=http://localhost`. This uses port 80 and disables Secure cookies for local HTTP. Never use this configuration for a public host.
 
+## Deploying with Coolify
+
+Use this when Coolify's Traefik proxy terminates TLS for the public site. Keep `compose.yaml` for a host where Caddy itself obtains certificates.
+
+1. Create a Docker Compose application from this repository. Set the base directory to `/` and the Docker Compose location to `/compose.coolify.yaml`.
+2. Enable **Preserve Repository During Deployment** so the relative bind `./infra/Caddyfile.coolify` is available after Coolify clones the repo.
+3. Set the `proxy` service domain to `https://crm.projects.invboy.com:80`. Assign the public domain only on `proxy`. Traefik owns certificates and forwards plain HTTP to Caddy on port 80.
+4. Set the environment variables Coolify reads from `${...}` in the compose file:
+   - `POSTGRES_PASSWORD` — URL-safe random value
+   - `ADMIN_EMAIL`
+   - `ADMIN_PASSWORD` — 14–72 bytes; creates the first administrator only
+   - `APP_ORIGIN=https://crm.projects.invboy.com` — exact origin, no trailing slash or path
+
+Caddy listens with `SITE_ADDRESS=:80` and automatic HTTPS off. `/mcp` and `/healthz` go to the API, and every other path goes to the web app, with the same security headers as `infra/Caddyfile`. No service publishes host ports. `APP_ORIGIN` still starts with `https://`, so the session cookie is `Secure`, and browser origin checks compare the `Origin` header to that same value.
+
 ## Local development
 
 Run a local PostgreSQL instance and create a database, then in separate terminals:
