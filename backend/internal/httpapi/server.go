@@ -33,6 +33,7 @@ func (server *Server) Handler() http.Handler {
 	router.HandleFunc("POST /api/sections", server.requireAdmin(server.createSection))
 	router.HandleFunc("POST /api/sections/{section}/fields", server.requireAdmin(server.addField))
 	router.HandleFunc("GET /api/sections/{section}/records", server.requireSession(server.listRecords))
+	router.HandleFunc("GET /api/sections/{section}/records/{id}", server.requireSession(server.getRecord))
 	router.HandleFunc("POST /api/sections/{section}/records", server.requireSession(server.saveRecord))
 	router.HandleFunc("PUT /api/sections/{section}/records/{id}", server.requireSession(server.saveRecord))
 	router.HandleFunc("DELETE /api/sections/{section}/records/{id}", server.requireSession(server.deleteRecord))

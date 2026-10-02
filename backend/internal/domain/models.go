@@ -78,3 +78,68 @@ const (
 	ReadAccess Access = iota
 	WriteAccess
 )
+
+// MaxPageSize is the largest record page agents and the repository will return.
+const MaxPageSize = 500
+
+// Activity is one timeline entry. Type is an open string so a later comment
+// can be stored as type "comment" with an author, without a separate table.
+type Activity struct {
+	ID        string    `json:"id"`
+	Type      string    `json:"type"`
+	Date      time.Time `json:"date"`
+	Summary   string    `json:"summary"`
+	Channel   string    `json:"channel,omitempty"`
+	Ref       string    `json:"ref,omitempty"`
+	Author    Author    `json:"author"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Author is the user or agent who appended a timeline entry.
+type Author struct {
+	Kind string `json:"kind"`
+	ID   string `json:"id"`
+}
+
+// RecordLink is the other side of a generic record-to-record relationship.
+type RecordLink struct {
+	SectionID   string `json:"section_id"`
+	SectionName string `json:"section_name"`
+	RecordID    string `json:"record_id"`
+	Direction   string `json:"direction"`
+	Name        string `json:"name,omitempty"`
+}
+
+const (
+	LinkOutgoing = "outgoing"
+	LinkIncoming = "incoming"
+)
+
+// Filter is one comparison. Filters on a list are combined with AND.
+type Filter struct {
+	Field string `json:"field"`
+	Op    string `json:"op"`
+	Value any    `json:"value,omitempty"`
+}
+
+// Sort selects one field and an asc or desc direction.
+type Sort struct {
+	Field     string `json:"field"`
+	Direction string `json:"direction"`
+}
+
+// ListQuery is the optional search contract. Limit 0 means the caller has not chosen one yet.
+type ListQuery struct {
+	Filters []Filter
+	Sort    *Sort
+	Limit   int
+	Cursor  string
+}
+
+// ListPage is one filtered, ordered page. NextCursor is empty on the last page.
+type ListPage struct {
+	Records    []Record
+	Limit      int
+	NextCursor string
+	Total      int
+}

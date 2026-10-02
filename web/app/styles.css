@@ -631,7 +631,7 @@ tbody tr:hover {
   transform: translate(-50%, -50%);
   background: white;
   border-radius: 10px;
-  width: 520px;
+  width: 560px;
   max-width: calc(100vw - 32px);
   max-height: 90vh;
   overflow: auto;
@@ -671,6 +671,51 @@ tbody tr:hover {
   margin-top: 10px;
   padding-top: 20px;
   border-top: 1px solid #e5ebe6;
+}
+.record-history {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.record-history h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.3;
+}
+.record-links,
+.timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.record-links li,
+.history-status {
+  margin: 0;
+  color: #31463c;
+  line-height: 1.45;
+}
+.timeline li {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #e5ebe6;
+}
+.timeline time {
+  font-variant-numeric: tabular-nums;
+  color: #3d5248;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.timeline p {
+  margin: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.timeline-meta {
+  color: #3d5248;
+  font-size: 12px;
+  margin-top: 2px;
 }
 .inline-label {
   display: flex;
@@ -1199,6 +1244,10 @@ tbody tr:hover {
   }
   .form-fields {
     grid-template-columns: 1fr;
+  }
+  .timeline li {
+    grid-template-columns: 1fr;
+    gap: 2px;
   }
   .dialog {
     padding: 20px;

@@ -15,6 +15,31 @@ export interface CRMRecord {
   data: Record<string, string | number | boolean | null>;
   updated_at: string;
 }
+export interface RecordLink {
+  section_id: string;
+  section_name: string;
+  record_id: string;
+  direction: 'outgoing' | 'incoming';
+  name?: string;
+}
+export interface ActivityAuthor {
+  kind: 'user' | 'agent';
+  id: string;
+}
+export interface Activity {
+  id: string;
+  type: string;
+  date: string;
+  summary: string;
+  channel?: string;
+  ref?: string;
+  author: ActivityAuthor;
+  created_at: string;
+}
+export interface RecordDetail extends CRMRecord {
+  links: RecordLink[];
+  activities: Activity[];
+}
 export interface Permission {
   section_id: string;
   read: boolean;

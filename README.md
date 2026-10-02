@@ -106,11 +106,14 @@ Tools are generated per authorized section:
 | Permission | Tools |
 | --- | --- |
 | Always available | `sections_schema` (only accessible section definitions) |
-| Read | `<section>_list` |
-| Write | `<section>_save`, `<section>_delete` |
+| Read | `<section>_list`, `<section>_get`, `<section>_activities` |
+| Write | `<section>_save`, `<section>_update`, `<section>_delete`, `<section>_log_activity` |
+| Read and write | `<section>_convert` |
 | Manage schema | `sections_create`, `fields_add` |
 
-A save with no `id` creates a record. A save with an `id` replaces its complete data; omit optional values to clear them. Use `sections_schema` first for field identifiers, types and required flags. Record lists return the latest 500 records; search/filter in the UI works within those 500. Paginated queries are an extension point for larger datasets.
+`<section>_convert` also requires write on the target section. That check happens when the tool is called, because the target is an argument. No extra permission type is required.
+
+A save with no `id` creates a record. A save with an `id` replaces its complete data; omit optional values to clear them. `<section>_update` changes only the fields in `data`; `null` clears a field and returns the full record. Use `sections_schema` first for field identifiers, types and required flags. A list call with no arguments still returns the latest 500 records as `{"records","limit"}`. Filters, sort, limit, and cursor page the whole section and add `next_cursor` and `total`. The record view shows links and the read-only timeline.
 
 `sections_create` takes the same `id` and `name` as the admin form. `fields_add` takes `section`, `id`, `label`, `type` (`text`, `email`, `number`, `date`, or `boolean`), and `required`. These tools use the same validation as the admin UI: a new required field is rejected while the section has records, and definitions cannot be renamed, deleted, or have their type changed. Each change is audited with the agent identity. Creating a section does not grant read or write on it, including for the agent that created it. Those grants stay denied until an administrator saves them.
 
@@ -122,11 +125,49 @@ Example save arguments:
 {"data":{"name":"Mara Santos","email":"mara@example.test","company":"Northline Studio","status":"Active","value":18500}}
 ```
 
+Argument shapes for the record tools, using `prospects` as an example of any section id:
+
+```json
+{"id":"RECORD_ID","data":{"status":"Ganado","notes":null}}
+```
+
+`prospects_update` — `id` (string), `data` (object). Omitted fields stay as they are.
+
+```json
+{"id":"RECORD_ID"}
+```
+
+`prospects_get` — `id` (string). The record includes `links`: `{section_id, section_name, record_id, direction, name?}`. `direction` is `outgoing` or `incoming`. `name` is present only when the agent can read the other section.
+
+```json
+{"filters":[{"field":"status","op":"eq","value":"Contactado"},{"field":"next_action_at","op":"lte","value":"2026-10-05"}],"sort":{"field":"updated_at","direction":"desc"},"limit":100,"cursor":"OPAQUE"}
+```
+
+`prospects_list` — every argument is optional. `filters` is `{field, op, value}` combined with AND. `op` is `eq`, `neq`, `contains`, `gt`, `gte`, `lt`, `lte`, `is_empty`, or `not_empty`. Range operators apply to number and date fields; `contains` applies to text and email. `sort.field` is a field id or `updated_at`; `sort.direction` is `asc` or `desc`. `limit` is 1–500. Send the returned `next_cursor` back with the same filters and sort. With no arguments the response stays `{"records","limit":500}`.
+
+```json
+{"id":"RECORD_ID","type":"email_enviado","date":"2026-10-02","summary":"Sent the introduction","channel":"email","ref":"thread-id"}
+```
+
+`prospects_log_activity` — `id`, `type`, `date`, `summary`; optional `channel` and `ref`. `type` is any short string, not a fixed list. `date` is `YYYY-MM-DD` or RFC3339. The author is the authenticated agent or user. A future comment is the same entry with `type` `comment`.
+
+```json
+{"id":"RECORD_ID"}
+```
+
+`prospects_activities` — `id`. Entries come back newest first.
+
+```json
+{"id":"RECORD_ID","target":"clients","mapping":{"source_note":"alias"},"overrides":{"email":"desk@example.test"},"status":"Ganado"}
+```
+
+`prospects_convert` — `id`, `target` section id; optional `mapping` (source field id to target field id), `overrides`, and `status`. Fields that share an id are copied first, then `mapping`, then `overrides`. `status`, when present, is written to the source record's `status` field. The same source cannot be converted into the same target section twice. The response is `{source, target}`, and each record includes `links`. There is no stored `prospect_id` or `client_id`; either id is the linked record id.
+
 ## Extend the CRM
 
 The `sections` registry drives the sidebar, record routes, field editor, permission matrix and MCP tool generation. UI-created sections start with a required `name` field. Every section is already supported by the generic record API and editor.
 
-Fields live in `fields` with a stable identifier and a supported type; values live in `records.data` as JSONB. New required fields are rejected while records exist so existing records remain valid. In this version, definitions can be added but not renamed/deleted/type-changed. Schema changes affecting existing values should use an explicit migration and backfill. To introduce another field type, update the SQL constraint, Go validation, and frontend form controls together.
+Fields live in `fields` with a stable identifier and a supported type; values live in `records.data` as JSONB, with a typed `record_values` projection for indexed filters. New required fields are rejected while records exist so existing records remain valid. In this version, definitions can be added but not renamed/deleted/type-changed. Schema changes affecting existing values should use an explicit migration and backfill. To introduce another field type, update the SQL constraint, Go validation, and frontend form controls together.
 
 Code structure:
 

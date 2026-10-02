@@ -9,6 +9,7 @@ import {
   RecordFields,
   SectionInputs,
 } from './editor-fields';
+import { RecordHistory } from './record-history';
 interface Props {
   modal: ModalKind | null;
   editing: CRMRecord | null;
@@ -39,6 +40,9 @@ export function WorkspaceDialogs({ modal, editing, revoke, section, busy, error,
         <input type="hidden" name="intent" value={presentation.intent} />
         <input type="hidden" name="section" value={section.id} />
         {modal === 'record' && <RecordFields fields={section.fields} record={editing} />}
+        {modal === 'record' && editing && (
+          <RecordHistory key={editing.id} sectionID={section.id} recordID={editing.id} />
+        )}
         {modal === 'field' && <CustomFieldInputs />}
         {modal === 'section' && <SectionInputs />}
         {modal === 'agent' && <AgentInputs />}

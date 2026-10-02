@@ -49,11 +49,17 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		handler.registerSchemaManagementTools(server, agentID)
 	}
 	for _, section := range sections {
-		if handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.ReadAccess) {
-			handler.registerReadTool(server, agentID, section)
+		canRead := handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.ReadAccess)
+		canWrite := handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.WriteAccess)
+		if canRead {
+			handler.registerReadTools(server, agentID, section)
 		}
-		if handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.WriteAccess) {
+		if canWrite {
 			handler.registerWriteTools(server, agentID, section)
+		}
+		// Conversion needs read and write on the source. Target write is checked when the tool runs.
+		if canRead && canWrite {
+			handler.registerConvertTool(server, agentID, section)
 		}
 	}
 	// Rebuild discovery for every stateless request, so registry and grant changes are immediate.
