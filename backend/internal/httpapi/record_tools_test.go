@@ -302,7 +302,7 @@ func TestRecordTools(t *testing.T) {
 			}
 		}
 		writerID, writerToken := createAgent(t, handler, cookie)
-		expectStatus(t, apiCall(t, handler, cookie, writerToken, "PUT", "/api/agents/"+writerID+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "prospects", Write: true}}}), 200)
+		expectStatus(t, apiCall(t, handler, cookie, writerToken, "PUT", "/api/agents/"+writerID+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "prospects", Read: true, Write: true, Delete: true}}}), 200)
 		listed = apiCall(t, handler, cookie, writerToken, "POST", "/mcp", map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": map[string]any{}})
 		body = listed.Body.String()
 		for _, name := range []string{"prospects_update", "prospects_log_activity", "prospects_save", "prospects_delete"} {
@@ -311,8 +311,8 @@ func TestRecordTools(t *testing.T) {
 			}
 		}
 		for _, name := range []string{"prospects_get", "prospects_list", "prospects_activities", "prospects_convert"} {
-			if strings.Contains(body, name) {
-				t.Fatalf("write grant exposed %s", name)
+			if !strings.Contains(body, name) {
+				t.Fatalf("writer's required read grant did not expose %s", name)
 			}
 		}
 		limitedID, limitedToken := createAgent(t, handler, cookie)

@@ -25,6 +25,7 @@ type sortArgument struct {
 	Direction string `json:"direction" jsonschema:"asc or desc"`
 }
 type listArguments struct {
+	Search  string           `json:"search,omitempty" jsonschema:"Free text across text and email fields, matching every word (up to 200 characters and 8 words)"`
 	Filters []filterArgument `json:"filters,omitempty" jsonschema:"Combined with AND"`
 	Sort    *sortArgument    `json:"sort,omitempty"`
 	Limit   *int             `json:"limit,omitempty" jsonschema:"Maximum 500"`
@@ -47,16 +48,16 @@ type convertArguments struct {
 }
 
 func (handler *Handler) registerReadTools(server *mcp.Server, agentID string, section domain.Section) {
-	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_list", Description: "List records in " + section.Name + ". With no arguments, returns the latest 500 records. Optional filters, sort, limit, and cursor page the whole section."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments listArguments) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_list", Description: "List records in " + section.Name + ". With no arguments, returns the latest 500 records. Optional search, filters, sort, limit, and cursor page the whole section."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments listArguments) (*mcp.CallToolResult, any, error) {
 		// Discovery is not authorization: recheck at invocation to reject revoked grants.
 		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.ReadAccess) {
 			return nil, nil, errPermissionDenied
 		}
-		if arguments.Filters == nil && arguments.Sort == nil && arguments.Limit == nil && arguments.Cursor == "" {
+		if arguments.Search == "" && arguments.Filters == nil && arguments.Sort == nil && arguments.Limit == nil && arguments.Cursor == "" {
 			records, err := handler.repository.ListRecords(ctx, section.ID)
 			return nil, map[string]any{"records": records, "limit": store.RecordListLimit}, toolError(err)
 		}
-		query := domain.ListQuery{Cursor: arguments.Cursor}
+		query := domain.ListQuery{Cursor: arguments.Cursor, Search: arguments.Search}
 		if arguments.Sort != nil {
 			query.Sort = &domain.Sort{Field: arguments.Sort.Field, Direction: arguments.Sort.Direction}
 		}
@@ -99,12 +100,19 @@ func (handler *Handler) registerReadTools(server *mcp.Server, agentID string, se
 }
 
 func (handler *Handler) registerRecordWriteTools(server *mcp.Server, agentID string, section domain.Section) {
-	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_update", Description: "Change only the supplied fields on a record in " + section.Name + ". Null clears a field. Returns the full record."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments updateArguments) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_update", Description: "Change only the supplied fields on a record in " + section.Name + ". Null clears a field. Returns the full record only with read access; otherwise returns id and updated_at."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments updateArguments) (*mcp.CallToolResult, any, error) {
 		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.WriteAccess) {
 			return nil, nil, errPermissionDenied
 		}
 		record, err := handler.repository.UpdateRecord(ctx, "agent:"+agentID, section.ID, arguments.ID, arguments.Data)
-		return nil, record, toolError(err)
+		if err != nil {
+			return nil, nil, toolError(err)
+		}
+		// Write-only grants never disclose unchanged values from the stored record.
+		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.ReadAccess) {
+			return nil, map[string]any{"id": record.ID, "updated_at": record.UpdatedAt}, nil
+		}
+		return nil, record, nil
 	})
 	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_log_activity", Description: "Append a timeline entry to a record in " + section.Name + ". Entries remain when the record is edited."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments activityArguments) (*mcp.CallToolResult, any, error) {
 		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.WriteAccess) {

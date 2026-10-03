@@ -32,6 +32,11 @@ func (repository *Repository) ListSections(ctx context.Context) ([]domain.Sectio
 			return nil, err
 		}
 		sections[index].Fields = fields
+		views, err := repository.ListSectionViews(ctx, sections[index].ID)
+		if err != nil {
+			return nil, err
+		}
+		sections[index].Views = views
 	}
 	return sections, nil
 }

@@ -1,12 +1,13 @@
 import { json, redirect, type LoaderFunctionArgs, type ActionFunctionArgs } from '@remix-run/node';
-import { api, requireOrigin } from '../../api.server';
+import { api, APIError, requireOrigin } from '../../api.server';
 import type {
   Agent,
   CreatedAgent,
   CreatedInvite,
-  CRMRecord,
   Invite,
   RecordPage,
+  RecordDetail,
+  ItemViewDefinition,
   Section,
   WebhookDelivery,
   WebhookEndpoint,
@@ -67,18 +68,23 @@ function webhookBody(form: FormData) {
   };
 }
 
-// A mention links to /?section=…&record=…, which opens that record's dialog.
+// Item links (including mentions) open the same addressable detail screen.
 async function openedRecord(request: Request, sectionID: string, params: URLSearchParams) {
   const recordID = params.get('record');
   if (!recordID) return null;
   try {
-    return await api<CRMRecord>(
+    return await api<RecordDetail>(
       request,
       `/sections/${sectionID}/records/${encodeURIComponent(recordID)}`,
     );
   } catch (error) {
     if (error instanceof Response) throw error;
-    return null;
+    if (error instanceof APIError)
+      throw new Response(error.message, {
+        status: error.status,
+        statusText: error.status === 404 ? 'Item not found' : 'Unable to load item',
+      });
+    throw error;
   }
 }
 
@@ -122,6 +128,11 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
   const searchParams = new URL(request.url).searchParams;
   const section =
     sections.find((section) => section.id === searchParams.get('section')) || sections[0];
+  if (
+    searchParams.has('record') &&
+    !sections.some((section) => section.id === searchParams.get('section'))
+  )
+    throw new Response('Section not found', { status: 404, statusText: 'Section not found' });
   const requestedView = searchParams.get('view');
   if (requestedView === 'settings') {
     throw redirect(currentUser.role === 'admin' ? '/?view=fields' : '/?view=security');
@@ -137,7 +148,7 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
   const requestedEndpoint = searchParams.get('endpoint') || '';
   const selectedWebhook = webhooks.find((endpoint) => endpoint.id === requestedEndpoint);
   const [page, agents, users, invites, deliveries] = await Promise.all([
-    view === 'records' && section
+    view === 'records' && section && !focusRecord
       ? loadRecordPage(request, section, searchParams)
       : Promise.resolve<RecordPage>({ records: [], total: 0, nextCursor: null, error: null }),
     view === 'agents' || view === 'webhooks'
@@ -164,6 +175,10 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
     selectedWebhookId: selectedWebhook?.id || '',
     focusRecord,
     currentUser,
+    itemViewCatalog:
+      view === 'fields' || focusRecord
+        ? await api<ItemViewDefinition[]>(request, '/item-view-types')
+        : [],
     sidebarCollapsed: /(?:^|;\s*)sira_sidebar=collapsed(?:;|$)/.test(
       request.headers.get('Cookie') || '',
     ),
@@ -205,6 +220,7 @@ async function savePermissions(request: Request, form: FormData) {
         section_id: section.id,
         read: checkedValue(form, `${section.id}:read`),
         write: checkedValue(form, `${section.id}:write`),
+        delete: checkedValue(form, `${section.id}:delete`),
       })),
     }),
   });
@@ -258,6 +274,14 @@ export async function workspaceAction({ request }: ActionFunctionArgs) {
           method: 'DELETE',
         });
         break;
+      case 'item-views': {
+        const views: unknown = JSON.parse(textValue(form, 'views'));
+        await api(request, `/sections/${sectionID}/views`, {
+          method: 'PUT',
+          body: JSON.stringify({ views }),
+        });
+        break;
+      }
       case 'field':
         await api(request, `/sections/${sectionID}/fields`, {
           method: 'POST',

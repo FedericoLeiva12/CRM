@@ -51,12 +51,17 @@ func (handler *Handler) registerWriteTools(server *mcp.Server, agentID string, s
 		identifier, err := handler.repository.SaveRecord(ctx, "agent:"+agentID, section.ID, arguments.ID, arguments.Data)
 		return nil, map[string]string{"id": identifier}, toolError(err)
 	})
+
+	handler.registerRecordWriteTools(server, agentID, section)
+}
+
+// Permanent record deletion has a separate grant; ordinary writing never implies it.
+func (handler *Handler) registerDeleteTool(server *mcp.Server, agentID string, section domain.Section) {
 	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_delete", Description: "Permanently delete a record from " + section.Name}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments deleteArguments) (*mcp.CallToolResult, any, error) {
-		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.WriteAccess) {
+		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.DeleteAccess) {
 			return nil, nil, errPermissionDenied
 		}
 		err := handler.repository.DeleteRecord(ctx, "agent:"+agentID, section.ID, arguments.ID)
 		return nil, map[string]string{"id": arguments.ID}, toolError(err)
 	})
-	handler.registerRecordWriteTools(server, agentID, section)
 }

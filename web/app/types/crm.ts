@@ -5,10 +5,30 @@ export interface Field {
   type: FieldType;
   required: boolean;
 }
+export interface SectionView {
+  id: string;
+  enabled: boolean;
+  config: Record<string, string>;
+}
+export interface ItemViewConfigField {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea';
+  required: boolean;
+  max_length: number;
+}
+export interface ItemViewDefinition {
+  id: string;
+  label: string;
+  description: string;
+  required: boolean;
+  config_fields: ItemViewConfigField[];
+}
 export interface Section {
   id: string;
   name: string;
   fields: Field[];
+  views: SectionView[];
 }
 export interface CRMRecord {
   id: string;
@@ -83,6 +103,7 @@ export interface Permission {
   section_id: string;
   read: boolean;
   write: boolean;
+  delete: boolean;
 }
 export interface Agent {
   id: string;

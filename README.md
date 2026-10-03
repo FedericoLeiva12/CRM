@@ -9,7 +9,7 @@ An extensible, single-workspace CRM with a Go API, PostgreSQL, Remix v2, Tailwin
 - Section-specific custom text, email, number, date and boolean fields, validated by the same backend for browser and agent writes.
 - Administrator sign-in, bcrypt cost 12, opaque hashed session tokens, HttpOnly/SameSite cookies, HTTPS-only production cookies, origin checks, login throttling, password changes and session revocation.
 - Team invitations by one-time link. Administrators manage people and roles. Members can view and edit records in every section.
-- One-time agent token display, hashed tokens at rest, independent read/write grants per section and immediate token revocation on subsequent requests.
+- One-time agent token display, hashed tokens at rest, read/write/delete grants per section (write requires read) and immediate token revocation on subsequent requests.
 - New sections automatically appear in permission settings and MCP discovery. All new permissions default to denied.
 - Record mutations are transactionally audited, with agent identity recorded.
 - Generic outbound webhooks. Administrators subscribe an https endpoint to workspace events. Delivery is asynchronous from a transactional outbox.
@@ -138,7 +138,7 @@ Endpoint create, update, delete, enable, disable, and automatic pause are writte
 
 1. Sign in and open **Agent access** → **Connect agent**.
 2. Give the agent a name. Copy the token while it is displayed; it cannot be retrieved later.
-3. Select read and/or write per section, and turn on **Manage schema** only when the agent should add sections and fields. Write access includes creation, complete replacement, and permanent deletion. Read, write, and schema management are independent. Manage schema starts off.
+3. Select read and/or write per section, and turn on **Manage schema** only when the agent should manage section definitions and item views. Write access includes creation and editing; **Delete** separately permits permanent record deletion and requires Write. Write requires Read; read-only agents are supported. Schema management is independent of record grants. Manage schema starts off.
 4. Configure an MCP client that supports Streamable HTTP and Authorization headers:
 
 ```json
@@ -158,16 +158,17 @@ Tools are generated per authorized section:
 
 | Permission | Tools |
 | --- | --- |
-| Always available | `sections_schema` (only accessible section definitions) |
+| Always available | `sections_schema` (accessible schemas; schema managers discover all definitions), `item_view_types` |
 | Always available | `mentions_list`, `mentions_mark_read` (the calling agent's own mentions) |
-| Read | `<section>_list`, `<section>_get`, `<section>_activities`, `<section>_comments` |
-| Write | `<section>_save`, `<section>_update`, `<section>_delete`, `<section>_log_activity`, `<section>_comment` |
+| Read | `<section>_list`, `<section>_get`, `<section>_activities`, `<section>_comments`, `<section>_mentionables` |
+| Write | `<section>_save`, `<section>_update`, `<section>_log_activity`, `<section>_comment`, `<section>_comment_update`, `<section>_comment_delete` |
+| Delete (requires Write) | `<section>_delete` |
 | Read and write | `<section>_convert` |
-| Manage schema | `sections_create`, `fields_add` |
+| Manage schema | `sections_create`, `fields_add`, `section_views_configure` |
 
 `<section>_convert` also requires write on the target section. That check happens when the tool is called, because the target is an argument. No extra permission type is required.
 
-A save with no `id` creates a record. A save with an `id` replaces its complete data; omit optional values to clear them. `<section>_update` changes only the fields in `data`; `null` clears a field and returns the full record. Use `sections_schema` first for field identifiers, types and required flags. A list call with no arguments still returns the latest 500 records as `{"records","limit"}`. Filters, sort, limit, and cursor page the whole section and add `next_cursor` and `total`. The record view shows links and the read-only timeline.
+A save with no `id` creates a record. A save with an `id` replaces its complete data; omit optional values to clear them. `<section>_update` changes only the fields in `data`; `null` clears a field. The response contains the full record only with read access; if read is revoked during an in-progress operation, the response is limited to `id` and `updated_at`. Use `sections_schema` first for field identifiers, types and required flags. A list call with no arguments still returns the latest 500 records as `{"records","limit"}`. Search, filters, sort, limit, and cursor page the whole section and add `next_cursor` and `total`. The optional Activity view shows links, comments and the timeline.
 
 `sections_create` takes the same `id` and `name` as the admin form. `fields_add` takes `section`, `id`, `label`, `type` (`text`, `email`, `number`, `date`, or `boolean`), and `required`. These tools use the same validation as the admin UI: a new required field is rejected while the section has records, and definitions cannot be renamed, deleted, or have their type changed. Each change is audited with the agent identity. Creating a section does not grant read or write on it, including for the agent that created it. Those grants stay denied until an administrator saves them.
 
@@ -223,7 +224,7 @@ A comment is a timeline entry of type `comment` on any record, in any section. I
 
 Every user and agent has a unique, stable `@handle` (1–32 characters of `a-z 0-9 _ -`). It is derived from the name for agents and the name or email for users, and a number is appended on a collision. Users and agents share one namespace. A handle counts as a mention when it starts the text or follows a non-word character, so `me@example.test` and paths are ignored, as are code spans and fences. Mentions are stored structurally, up to 20 per comment, and each one is a notification for that user or agent. An agent is only mentioned if it can read the section. Editing a comment replaces its mention set; only newly mentioned principals are notified. The identifier `mentions` is reserved and cannot be used for a section.
 
-In the web app, the record dialog shows a composer with `@` autocomplete of the team and of agents that can read the section. Mentions render as chips, and the timeline interleaves comments with other activity, newest first, with reply, edit and delete. The bell in the header lists the current user's mentions, links to the record, and marks them read.
+In the web app, the item’s Activity view shows a composer with `@` autocomplete of the team and of agents that can read the section. Mentions render as chips, and the timeline interleaves comments with other activity, newest first, with reply, edit and delete. The bell in the header lists the current user's mentions, links to the record, and marks them read.
 
 ```json
 {"id":"RECORD_ID","body":"@agent-name please check this, cc @ana-lopez","parent_id":"OPTIONAL_COMMENT_ID","mentions":["agent:AGENT_ID"]}
@@ -247,7 +248,7 @@ In the web app, the record dialog shows a composer with `@` autocomplete of the 
 {"ids":["MENTION_ID"]}
 ```
 
-`mentions_mark_read` — `ids`. Returns `{marked}`. Only the caller's own mentions change.
+`mentions_mark_read` — `ids`, or `all: true`. Returns `{marked}`. Only the caller's own mentions change.
 
 ## Extend the CRM
 
@@ -279,7 +280,7 @@ web/app/
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) for dependency boundaries, extension guidelines and quality tooling.
 
-The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies write-only MCP access, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection. Webhook tests cover signatures, custom headers, retry and backoff, automatic pause, outbox durability, member denial, actor exclusions (including mention exceptions and test events), and the SSRF block.
+The integration suite includes creation of Employees and checks that the section appears automatically as denied, then verifies that write requires read, migration of existing grants, permission removal and token revocation. It also checks that schema tools are denied until granted, match admin validation, leave new sections closed, and stop working when the grant is removed. Team tests cover invitation creation, acceptance, expiry, replacement, revocation, single use, member denial of administrator routes, and last-administrator protection. Webhook tests cover signatures, custom headers, retry and backoff, automatic pause, outbox durability, member denial, actor exclusions (including mention exceptions and test events), and the SSRF block.
 
 ## Verify
 
@@ -317,3 +318,12 @@ Test restoration in an isolated database before relying on a backup. `docker com
 Record audit events are stored in `audit`; there is no audit viewer yet. Set retention and monitoring policies appropriate to your deployment, including cleanup of expired sessions. Login throttling is in-process and intended for a single API replica; add shared throttling before horizontally scaling. Deploy schema migrations in a controlled step before multiple API replicas. Keep secrets in a deployment secret manager, restrict host/Docker access, and keep runtime images and dependencies patched.
 
 Local verification on this machine uses a generated `web/node_modules` symlink to `/tmp/sira-web-dependencies/node_modules` to avoid macOS offloading dependency files in Documents. This is ignored by Git and Docker. If the temporary directory is removed or after a reboot, remove the symlink and run `npm ci` again, ideally from a checkout outside a cloud-synced folder.
+
+## Item detail and views
+
+Records now open as full screens. Info is always available and starts in read-only mode; choose Edit to update fields. Sections have Info only by default, so no tab bar is shown. From Settings → Sections, administrators can install and enable optional item views. Activity exposes the existing comments, mentions, timeline and related records without deleting any history when disabled.
+
+New views are registered through a Go catalog and a frontend component map. See [the item views extension guide](docs/ITEM_VIEWS.md) for implementation steps and a future agent view with a per-section system prompt. The agent example is documentation, not a running chat feature.
+
+
+See [docs/MCP.md](docs/MCP.md) for the full tool contract, free-text search, comment ownership/section checks, mention discovery, view configuration and migration of the separate Delete grant. Migration 009 disables implicit record deletion on existing write grants; administrators must explicitly enable Delete if needed.

@@ -41,7 +41,7 @@ func TestIntegration(t *testing.T) {
 		t.Fatal("Migration replay failed", err)
 	}
 	var migrationCount int
-	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 7 {
+	if err = pool.QueryRow(ctx, "SELECT count(*) FROM schema_migrations").Scan(&migrationCount); err != nil || migrationCount != 10 {
 		t.Fatal("Migration was not tracked exactly once", migrationCount, err)
 	}
 	passwordHash, _ := bcrypt.GenerateFromPassword([]byte("a-long-test-password"), bcrypt.MinCost)
@@ -99,7 +99,7 @@ func TestIntegration(t *testing.T) {
 	expect(call("POST", "/api/sections/clients/fields", map[string]any{"id": "industry", "label": "Industry", "type": "text", "required": false}, true), 201)
 	expect(call("POST", "/api/sections/clients/fields", map[string]any{"id": "required", "label": "Required", "type": "text", "required": true}, true), 400)
 	expect(call("PUT", "/api/sections/clients/records/"+record["id"], map[string]any{"data": map[string]any{"name": "Mara Santos", "industry": "Architecture"}}, true), 200)
-	// Agent discovery and invocation enforce independent grants.
+	// Agent discovery and invocation enforce read-only grants and write prerequisites.
 	response = call("POST", "/api/agents", map[string]string{"name": "Test agent"}, true)
 	expect(response, 201)
 	var agent map[string]string
@@ -143,7 +143,8 @@ func TestIntegration(t *testing.T) {
 	if !strings.Contains(response.Body.String(), `"section_id":"employees","read":false,"write":false`) {
 		t.Fatal("Automatic section permissions missing", response.Body.String())
 	}
-	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "employees", Write: true}}}, true), 200)
+	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "employees", Write: true}}}, true), 400)
+	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "employees", Read: true, Write: true}}}, true), 200)
 	response = rpc("tools/call", map[string]any{"name": "employees_save", "arguments": map[string]any{"data": map[string]any{"name": "Tess Ward"}}})
 	expect(response, 200)
 	if strings.Contains(response.Body.String(), `"isError":true`) || strings.Contains(response.Body.String(), `"error":`) {
@@ -151,8 +152,8 @@ func TestIntegration(t *testing.T) {
 	}
 	response = rpc("tools/list", map[string]any{})
 	expect(response, 200)
-	if !strings.Contains(response.Body.String(), "employees_save") || strings.Contains(response.Body.String(), "employees_list") {
-		t.Fatal("Write-only permission failed", response.Body.String())
+	if !strings.Contains(response.Body.String(), "employees_save") || !strings.Contains(response.Body.String(), "employees_list") {
+		t.Fatal("Writer did not receive read and write tools", response.Body.String())
 	}
 	expect(call("PUT", "/api/agents/"+agent["id"]+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "clients"}}}, true), 200)
 	response = rpc("tools/list", map[string]any{})

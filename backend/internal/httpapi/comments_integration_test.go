@@ -203,7 +203,7 @@ func TestComments(t *testing.T) {
 	scout := world.agent("Scout Bot", domain.Permission{SectionID: "prospects", Read: true, Write: true})
 	scoutTwin := world.agent("Scout Bot", domain.Permission{SectionID: "prospects", Read: true, Write: true})
 	reader := world.agent("Read Only", domain.Permission{SectionID: "prospects", Read: true})
-	writer := world.agent("Write Only", domain.Permission{SectionID: "prospects", Write: true})
+	writer := world.agent("Former Writer", domain.Permission{SectionID: "prospects", Read: true, Write: true})
 	quiet := world.agent("Quiet Agent", domain.Permission{SectionID: "clients", Read: true, Write: true})
 	nobody := world.agent("No Grants")
 
@@ -285,7 +285,7 @@ func TestComments(t *testing.T) {
 		for agent, want := range map[string][]bool{
 			"scout":  {true, true, true, true, false},
 			"reader": {false, true, true, true, false},
-			"writer": {true, false, true, true, false},
+			"writer": {true, true, true, true, false},
 			"nobody": {false, false, true, true, false},
 			"quiet":  {false, false, true, true, true},
 		} {
@@ -298,8 +298,8 @@ func TestComments(t *testing.T) {
 		if world.toolFailure(reader, "prospects_comment", map[string]any{"id": record, "body": "no"}) == "" {
 			t.Fatal("a read-only agent commented")
 		}
-		if world.toolFailure(writer, "prospects_comments", map[string]any{"id": record}) == "" {
-			t.Fatal("a write-only agent listed comments")
+		if world.toolFailure(writer, "prospects_comments", map[string]any{"id": record}) != "" {
+			t.Fatal("writer's required read access did not allow listing comments")
 		}
 		if world.toolFailure(nobody, "prospects_comment", map[string]any{"id": record, "body": "no"}) == "" {
 			t.Fatal("an agent without grants commented")
@@ -554,7 +554,7 @@ func TestComments(t *testing.T) {
 			t.Fatal("unread count changed")
 		}
 		// Losing read access hides the mention; getting it back restores it.
-		expectStatus(t, apiCall(t, handler, adminCookie, "", "PUT", "/api/agents/"+scout.id+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "prospects", Read: false, Write: true}}}), 200)
+		expectStatus(t, apiCall(t, handler, adminCookie, "", "PUT", "/api/agents/"+scout.id+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "prospects", Read: false, Write: false}}}), 200)
 		hidden := world.callTool(scout, "mentions_list", map[string]any{})
 		if len(hidden["mentions"].([]any)) != 0 || hidden["unread_count"] != float64(0) {
 			t.Fatalf("mention leaked after read access was revoked: %v", hidden)
@@ -570,13 +570,14 @@ func TestComments(t *testing.T) {
 		if world.toolFailure(scout, "mentions_mark_read", map[string]any{"ids": []string{}}) == "" {
 			t.Fatal("empty id list was accepted")
 		}
-		// An agent that lost read access cannot be mentioned any more.
-		result := postComment(world.member, "@read-only and @write-only", nil)
+		// Revoking read also removes write; the former writer is no longer mentionable.
+		expectStatus(t, apiCall(t, handler, adminCookie, "", "PUT", "/api/agents/"+writer.id+"/permissions", map[string]any{"permissions": []domain.Permission{{SectionID: "prospects"}}}), 200)
+		result := postComment(world.member, "@read-only and @former-writer", nil)
 		if got := handles(result["comment"].(map[string]any)["mentions"]); !slices.Equal(got, []string{"read-only"}) {
 			t.Fatalf("mentions = %v", got)
 		}
-		if got := strs(result["unresolved_mentions"]); !slices.Equal(got, []string{"@write-only"}) {
-			t.Fatalf("a write-only agent cannot read the record: %v", got)
+		if got := strs(result["unresolved_mentions"]); !slices.Equal(got, []string{"@former-writer"}) {
+			t.Fatalf("an agent without read cannot read the record: %v", got)
 		}
 	})
 
@@ -816,7 +817,7 @@ func TestComments(t *testing.T) {
 		if !slices.Contains(agents, "scout-bot") || !slices.Contains(agents, "scout-bot-2") || !slices.Contains(agents, "read-only") {
 			t.Fatalf("agents = %v", agents)
 		}
-		for _, excluded := range []string{"write-only", "quiet-agent", "no-grants"} {
+		for _, excluded := range []string{"former-writer", "quiet-agent", "no-grants"} {
 			if slices.Contains(agents, excluded) {
 				t.Fatalf("%s cannot read prospects but was offered: %v", excluded, agents)
 			}

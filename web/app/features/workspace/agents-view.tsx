@@ -1,5 +1,6 @@
 import { Form } from '@remix-run/react';
 import { Bot, Plus, ShieldCheck } from 'lucide-react';
+import { SectionPermissionRow } from './section-permission-row';
 import { CheckControl } from '../../components/permission-checkbox';
 import type { Agent, Section } from '../../types/crm';
 interface Props {
@@ -27,10 +28,11 @@ export function AgentsView({
         <div>
           <h2>You set the boundaries.</h2>
           <p>
-            Read access lets agents retrieve records. Write access lets them create, replace, and
-            delete records. Manage schema lets them add sections and fields. A new section stays
-            closed for every agent, including the one that created it, until you grant read or
-            write.
+            Read access lets agents retrieve records. Write access lets them create and edit
+            records, and always includes Read. Delete access separately permits permanent record
+            deletion. Manage schema lets them manage section definitions and item views. A new
+            section stays closed for every agent, including the one that created it, until you grant
+            read or write.
           </p>
         </div>
         <code>/mcp</code>
@@ -82,12 +84,14 @@ export function AgentsView({
               <div>
                 <b>Manage schema</b>
                 <p>
-                  Create sections and add fields. Starts off, and does not include record access.
+                  Discover section definitions, create sections, add fields and configure item
+                  views. Does not include record access.
                 </p>
               </div>
               <CheckControl
                 name="manage_schema"
                 checked={agent.manage_schema}
+                disabled={busy}
                 label={`Manage schema for ${agent.name}`}
               />
             </div>
@@ -95,26 +99,18 @@ export function AgentsView({
               <span>Section</span>
               <span>Read</span>
               <span>Write</span>
+              <span>Delete</span>
             </div>
             {agent.permissions.map((permission) => (
-              <div className="permission-row" key={permission.section_id}>
-                <span>
-                  {
-                    sections.find((sectionOption) => sectionOption.id === permission.section_id)
-                      ?.name
-                  }
-                </span>
-                <CheckControl
-                  name={`${permission.section_id}:read`}
-                  checked={permission.read}
-                  label={`Read ${permission.section_id}`}
-                />
-                <CheckControl
-                  name={`${permission.section_id}:write`}
-                  checked={permission.write}
-                  label={`Write ${permission.section_id}`}
-                />
-              </div>
+              <SectionPermissionRow
+                key={`${permission.section_id}:${permission.read}:${permission.write}:${permission.delete}`}
+                permission={permission}
+                name={
+                  sections.find((candidate) => candidate.id === permission.section_id)?.name ||
+                  permission.section_id
+                }
+                disabled={busy}
+              />
             ))}
             <div className="agent-save">
               <span className="muted">Changes apply to subsequent agent requests.</span>

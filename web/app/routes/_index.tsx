@@ -11,13 +11,14 @@ import {
 } from '@remix-run/react';
 import { viewPresentation, actionMessages } from '../features/workspace/presentation';
 import { ChevronRight, Plus } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { workspaceLoader, workspaceAction } from '../features/workspace/workspace.server';
-import { SettingsNavigation } from '../features/workspace/settings-navigation';
+import { WorkspacePage } from '../features/workspace/settings-navigation';
 import { MobileNavigation } from '../features/workspace/mobile-navigation';
 import { Sidebar } from '../features/workspace/sidebar';
 import { RecordsView } from '../features/workspace/records-view';
-import { FieldsView } from '../features/workspace/fields-view';
+import { SectionSettings } from '../features/section-settings/section-settings';
+import { ItemDetailScreen } from '../features/record-detail/record-detail';
 import { AgentsView } from '../features/workspace/agents-view';
 import { TeamView } from '../features/workspace/team-view';
 import { WebhooksView } from '../features/workspace/webhooks-view';
@@ -39,6 +40,7 @@ export default function Workspace() {
     deliveries,
     selectedWebhookId,
     focusRecord,
+    itemViewCatalog,
     currentUser,
     sidebarCollapsed,
   } = useLoaderData<typeof loader>();
@@ -53,14 +55,6 @@ export default function Workspace() {
   const [inviteLink, setInviteLink] = useState('');
   const [webhookEditor, setWebhookEditor] = useState(false);
   const busy = navigation.state !== 'idle' && !isListRefinement(navigation, location);
-  const openedFor = useRef('');
-  useEffect(() => {
-    // One open per navigation: revalidation after a save keeps the key, a new link click changes it.
-    if (!focusRecord || openedFor.current === location.key) return;
-    openedFor.current = location.key;
-    setEditing(focusRecord);
-    setModal('record');
-  }, [focusRecord, location.key]);
   useEffect(() => {
     if (actionResult?.ok) {
       setModal(null);
@@ -70,6 +64,9 @@ export default function Workspace() {
   }, [actionResult]);
   const error = actionResult?.error;
   const presentation = viewPresentation(view, section);
+  let pageLayout = 'records-page';
+  if (focusRecord) pageLayout = 'item-page';
+  const PageTitle = view === 'records' ? 'h1' : 'h2';
   function openPrimaryAction() {
     if (view === 'webhooks') {
       setWebhookEditor(true);
@@ -80,14 +77,17 @@ export default function Workspace() {
   }
   function closeModal() {
     setModal(null);
-    if (params.has('record')) {
-      const next = new URLSearchParams(params);
-      next.delete('record');
-      setParams(next, { replace: true });
-    }
   }
   function openRecord(record: CRMRecord | null) {
-    setEditing(record);
+    if (record) {
+      const next = new URLSearchParams(params);
+      next.set('section', section.id);
+      next.set('record', record.id);
+      next.delete('tab');
+      setParams(next);
+      return;
+    }
+    setEditing(null);
     setModal('record');
   }
   return (
@@ -122,24 +122,22 @@ export default function Workspace() {
             </span>
           </div>
         </header>
-        <div className={`page ${view !== 'records' ? 'settings-layout' : 'records-page'}`}>
-          {view !== 'records' && (
-            <SettingsNavigation view={view} admin={currentUser.role === 'admin'} />
-          )}
+        <WorkspacePage view={view} admin={currentUser.role === 'admin'} className={pageLayout}>
           <div className="workspace-content">
-            <div className="page-title">
-              <div>
-                {view !== 'records' && <div className="eyebrow">SETTINGS</div>}
-                <h1>{presentation.title}</h1>
-                {view !== 'records' && <p className="muted">{presentation.description}</p>}
+            {!focusRecord && (
+              <div className="page-title">
+                <div>
+                  <PageTitle>{presentation.title}</PageTitle>
+                  {view !== 'records' && <p className="muted">{presentation.description}</p>}
+                </div>
+                {presentation.actionLabel && (
+                  <button className="primary" onClick={openPrimaryAction}>
+                    <Plus size={18} />
+                    {presentation.actionLabel}
+                  </button>
+                )}
               </div>
-              {presentation.actionLabel && (
-                <button className="primary" onClick={openPrimaryAction}>
-                  <Plus size={18} />
-                  {presentation.actionLabel}
-                </button>
-              )}
-            </div>
+            )}
             {busy && (
               <p role="status" className="loading-message">
                 Updating workspace…
@@ -158,7 +156,16 @@ export default function Workspace() {
                 {error}
               </div>
             )}
-            {view === 'records' && (
+            {view === 'records' && focusRecord && (
+              <ItemDetailScreen
+                key={`${section.id}:${focusRecord.id}`}
+                section={section}
+                record={focusRecord}
+                catalog={itemViewCatalog}
+                viewer={{ id: currentUser.id, role: currentUser.role }}
+              />
+            )}
+            {view === 'records' && !focusRecord && (
               <RecordsView
                 key={section.id}
                 section={section}
@@ -191,7 +198,8 @@ export default function Workspace() {
               </section>
             )}
             {view === 'fields' && (
-              <FieldsView
+              <SectionSettings
+                catalog={itemViewCatalog}
                 sections={sections}
                 section={section}
                 onSelectSection={(identifier) => setParams({ view: 'fields', section: identifier })}
@@ -236,14 +244,13 @@ export default function Workspace() {
               />
             )}
           </div>
-        </div>
+        </WorkspacePage>
       </main>
       <WorkspaceDialogs
         modal={modal}
         editing={editing}
         revoke={revoke}
         section={section}
-        viewer={{ id: currentUser.id, role: currentUser.role }}
         busy={busy}
         error={error}
         onClose={closeModal}
