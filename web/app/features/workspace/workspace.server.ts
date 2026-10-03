@@ -13,6 +13,7 @@ import type {
   WorkspaceUser,
   WorkspaceView,
 } from '../../types/crm';
+import { settingsGroups } from './settings';
 import { PAGE_SIZE, parseListState, toApiQuery } from './list-query';
 
 interface QueryResponse {
@@ -122,14 +123,14 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
   const section =
     sections.find((section) => section.id === searchParams.get('section')) || sections[0];
   const requestedView = searchParams.get('view');
-  const view: WorkspaceView =
-    requestedView === 'fields' ||
-    requestedView === 'agents' ||
-    requestedView === 'team' ||
-    requestedView === 'webhooks'
-      ? requestedView
-      : 'records';
-  if (view !== 'records' && currentUser.role !== 'admin') throw redirect('/');
+  if (requestedView === 'settings') {
+    throw redirect(currentUser.role === 'admin' ? '/?view=fields' : '/?view=security');
+  }
+  const setting = settingsGroups
+    .flatMap((group) => group.items)
+    .find((item) => item.view === requestedView);
+  const view: WorkspaceView = setting?.view || 'records';
+  if (setting?.adminOnly && currentUser.role !== 'admin') throw redirect('/?view=security');
   const focusRecord =
     view === 'records' && section ? await openedRecord(request, section.id, searchParams) : null;
   const webhooks = view === 'webhooks' ? await api<WebhookEndpoint[]>(request, '/webhooks') : [];
@@ -163,6 +164,9 @@ export async function workspaceLoader({ request }: LoaderFunctionArgs) {
     selectedWebhookId: selectedWebhook?.id || '',
     focusRecord,
     currentUser,
+    sidebarCollapsed: /(?:^|;\s*)sira_sidebar=collapsed(?:;|$)/.test(
+      request.headers.get('Cookie') || '',
+    ),
   });
 }
 

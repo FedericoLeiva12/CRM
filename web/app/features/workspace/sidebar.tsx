@@ -1,105 +1,156 @@
 import { Form, Link } from '@remix-run/react';
+import * as Tooltip from '@radix-ui/react-tooltip';
+import { useState, type ReactElement } from 'react';
 import {
-  Bot,
-  ChevronRight,
   Contact,
-  LayoutGrid,
   LogOut,
+  PanelLeftClose,
+  PanelLeftOpen,
   Plus,
   Settings2,
-  ShieldCheck,
-  UserPlus,
   Users,
-  Webhook,
 } from 'lucide-react';
 import type { ModalKind, Section, WorkspaceView } from '../../types/crm';
+
 interface Props {
   sections: Section[];
   section: Section;
   view: WorkspaceView;
   admin: boolean;
+  initiallyCollapsed: boolean;
   onOpenModal: (modal: ModalKind) => void;
 }
-export function Sidebar({ sections, section, view, admin, onOpenModal }: Props) {
+
+function SidebarTooltip({
+  label,
+  enabled,
+  children,
+}: {
+  label: string;
+  enabled: boolean;
+  children: ReactElement;
+}) {
+  const [open, setOpen] = useState(false);
   return (
-    <aside className="sidebar">
-      <Link to="/" className="brand">
-        <span className="brand-mark">s</span>sira
-        <span className="brand-crm">CRM</span>
-      </Link>
-      <div className="workspace-label">
-        <span className="workspace-avatar">S</span>
-        <div>
-          <b>Sira workspace</b>
-          <small>Relationship management</small>
+    <Tooltip.Root open={enabled && open} onOpenChange={setOpen}>
+      <Tooltip.Trigger asChild>{children}</Tooltip.Trigger>
+      <Tooltip.Portal>
+        <Tooltip.Content
+          className="sidebar-tooltip"
+          side="right"
+          sideOffset={10}
+          collisionPadding={12}
+        >
+          {label}
+          <Tooltip.Arrow className="sidebar-tooltip-arrow" />
+        </Tooltip.Content>
+      </Tooltip.Portal>
+    </Tooltip.Root>
+  );
+}
+
+export function Sidebar({
+  sections,
+  section,
+  view,
+  admin,
+  initiallyCollapsed,
+  onOpenModal,
+}: Props) {
+  const [collapsed, setCollapsed] = useState(initiallyCollapsed);
+  const toggleLabel = collapsed ? 'Expand sidebar' : 'Collapse sidebar';
+  function toggleSidebar() {
+    const next = !collapsed;
+    setCollapsed(next);
+    // Read by the loader on the next visit, avoiding a flash of the expanded sidebar.
+    document.cookie = `sira_sidebar=${next ? 'collapsed' : 'expanded'}; Path=/; Max-Age=31536000; SameSite=Lax${location.protocol === 'https:' ? '; Secure' : ''}`;
+  }
+  return (
+    <Tooltip.Provider delayDuration={200}>
+      <aside className={`sidebar ${collapsed ? 'sidebar-collapsed' : ''}`}>
+        <div className="sidebar-heading">
+          <SidebarTooltip label="Sira CRM" enabled={collapsed}>
+            <Link to="/" className="brand" aria-label="Sira CRM">
+              <span className="brand-mark" aria-hidden="true">
+                S
+              </span>
+              <span className="brand-name">
+                sira<span className="brand-crm">CRM</span>
+              </span>
+            </Link>
+          </SidebarTooltip>
+          <SidebarTooltip label={toggleLabel} enabled>
+            <button
+              type="button"
+              className="sidebar-toggle"
+              aria-label={toggleLabel}
+              aria-expanded={!collapsed}
+              aria-controls="workspace-navigation"
+              onClick={toggleSidebar}
+            >
+              {collapsed ? (
+                <PanelLeftOpen size={18} aria-hidden="true" />
+              ) : (
+                <PanelLeftClose size={18} aria-hidden="true" />
+              )}
+            </button>
+          </SidebarTooltip>
         </div>
-      </div>
-      <div className="nav-label">WORKSPACE</div>
-      <nav>
-        <Link to="/" className={view === 'records' ? 'nav-item home-link' : 'nav-item'}>
-          <LayoutGrid size={18} />
-          Overview
-          <ChevronRight size={14} />
-        </Link>
-        {sections.map((s) => (
+        <div className="nav-label">WORKSPACE</div>
+        <nav id="workspace-navigation" aria-label="Workspace sections">
+          {sections.map((sectionOption) => (
+            <SidebarTooltip key={sectionOption.id} label={sectionOption.name} enabled={collapsed}>
+              <Link
+                to={`/?section=${sectionOption.id}`}
+                aria-label={sectionOption.name}
+                aria-current={
+                  view === 'records' && section?.id === sectionOption.id ? 'page' : undefined
+                }
+                className={`nav-item ${view === 'records' && section?.id === sectionOption.id ? 'active' : ''}`}
+              >
+                {sectionOption.id === 'prospects' ? (
+                  <Contact size={18} aria-hidden="true" />
+                ) : (
+                  <Users size={18} aria-hidden="true" />
+                )}
+                <span className="sidebar-item-label">{sectionOption.name}</span>
+              </Link>
+            </SidebarTooltip>
+          ))}
+          {admin && (
+            <SidebarTooltip label="Add section" enabled={collapsed}>
+              <button
+                className="nav-item add-section"
+                aria-label="Add section"
+                onClick={() => onOpenModal('section')}
+              >
+                <Plus size={17} aria-hidden="true" />
+                <span className="sidebar-item-label">Add section</span>
+              </button>
+            </SidebarTooltip>
+          )}
+        </nav>
+        <SidebarTooltip label="Settings" enabled={collapsed}>
           <Link
-            key={s.id}
-            to={`/?section=${s.id}`}
-            className={`nav-item ${view === 'records' && section?.id === s.id ? 'active' : ''}`}
+            to={admin ? '/?view=fields' : '/?view=security'}
+            aria-label="Settings"
+            className={`nav-item settings-entry ${view !== 'records' ? 'active' : ''}`}
+            aria-current={view !== 'records' ? 'page' : undefined}
           >
-            {s.id === 'prospects' ? <Contact size={18} /> : <Users size={18} />}
-            <span>{s.name}</span>
+            <Settings2 size={18} aria-hidden="true" />
+            <span className="sidebar-item-label">Settings</span>
           </Link>
-        ))}
-        {admin && (
-          <button className="nav-item add-section" onClick={() => onOpenModal('section')}>
-            <Plus size={17} />
-            Add section
-          </button>
-        )}
-      </nav>
-      <div className="nav-label settings-label">CONTROL CENTER</div>
-      {admin && (
-        <Link to="/?view=fields" className={`nav-item ${view === 'fields' ? 'active' : ''}`}>
-          <Settings2 size={18} />
-          Fields & sections
-        </Link>
-      )}
-      {admin && (
-        <Link to="/?view=agents" className={`nav-item ${view === 'agents' ? 'active' : ''}`}>
-          <Bot size={18} />
-          Agent access
-        </Link>
-      )}
-      {admin && (
-        <Link to="/?view=team" className={`nav-item ${view === 'team' ? 'active' : ''}`}>
-          <UserPlus size={18} />
-          Team
-        </Link>
-      )}
-      {admin && (
-        <Link to="/?view=webhooks" className={`nav-item ${view === 'webhooks' ? 'active' : ''}`}>
-          <Webhook size={18} />
-          Webhooks
-        </Link>
-      )}
-      <button className="nav-item" onClick={() => onOpenModal('password')}>
-        <ShieldCheck size={18} />
-        Account security
-      </button>
-      <div className="sidebar-footer">
-        <ShieldCheck size={18} />
-        <span>
-          Private workspace<small>Controlled agent access</small>
-        </span>
-      </div>
-      <Form method="post">
-        <input type="hidden" name="intent" value="logout" />
-        <button className="nav-item logout">
-          <LogOut size={17} />
-          Sign out
-        </button>
-      </Form>
-    </aside>
+        </SidebarTooltip>
+        <Form method="post">
+          <input type="hidden" name="intent" value="logout" />
+          <SidebarTooltip label="Sign out" enabled={collapsed}>
+            <button className="nav-item logout" aria-label="Sign out">
+              <LogOut size={17} aria-hidden="true" />
+              <span className="sidebar-item-label">Sign out</span>
+            </button>
+          </SidebarTooltip>
+        </Form>
+      </aside>
+    </Tooltip.Provider>
   );
 }

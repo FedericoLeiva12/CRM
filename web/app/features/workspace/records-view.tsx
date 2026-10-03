@@ -1,18 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFetcher, useNavigation, useSearchParams } from '@remix-run/react';
 import { RecordCell } from './record-cell';
-import {
-  ArrowDown,
-  ArrowUp,
-  ArrowUpDown,
-  ArrowUpRight,
-  CircleHelp,
-  Database,
-  Plus,
-  ShieldCheck,
-  Trash2,
-  Users,
-} from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Trash2, Users } from 'lucide-react';
 import type { CRMRecord, RecordPage, Section } from '../../types/crm';
 import { ListToolbar } from './list-toolbar';
 import {
@@ -98,35 +87,6 @@ export function RecordsView({
   const loadingMore = fetcher.state !== 'idle';
   return (
     <>
-      <div className="summary">
-        <div>
-          <span>
-            {refined ? 'Matching' : 'Total'} {section.name.toLowerCase()}
-          </span>
-          <strong>{page.total.toString().padStart(2, '0')}</strong>
-        </div>
-        <div>
-          <span>Showing</span>
-          <strong>
-            {records.length.toString().padStart(2, '0')}
-            <small>of {page.total} records</small>
-          </strong>
-        </div>
-        <div className="summary-note">
-          <Database size={22} />
-          <p>
-            A place for every detail.
-            <br />
-            {canManage ? (
-              <button onClick={() => onAddField()}>
-                Customize your fields <ArrowUpRight size={14} />
-              </button>
-            ) : (
-              <span>Your team keeps these details together.</span>
-            )}
-          </p>
-        </div>
-      </div>
       <ListToolbar
         sectionName={section.name}
         fields={columns}
@@ -218,15 +178,6 @@ export function RecordsView({
           </div>
         )}
       </div>
-      <div className="table-footer">
-        <span role="status">
-          Showing {records.length} of {page.total} records
-        </span>
-        <span>
-          <ShieldCheck size={14} />
-          Saved in your workspace
-        </span>
-      </div>
       {loadError && (
         <div role="alert" className="error-banner">
           {loadError}
@@ -236,15 +187,6 @@ export function RecordsView({
         <div className="load-more">
           <button className="secondary" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? 'Loading…' : 'Load more'}
-          </button>
-        </div>
-      )}
-      {canManage && (
-        <div className="bottom-note">
-          <CircleHelp size={17} />
-          <span>Make it yours. Add custom fields for the details your team tracks.</span>
-          <button onClick={() => onAddField()}>
-            Manage fields <ArrowUpRight size={14} />
           </button>
         </div>
       )}

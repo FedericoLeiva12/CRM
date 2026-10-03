@@ -13,6 +13,8 @@ import { viewPresentation, actionMessages } from '../features/workspace/presenta
 import { ChevronRight, Plus } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { workspaceLoader, workspaceAction } from '../features/workspace/workspace.server';
+import { SettingsNavigation } from '../features/workspace/settings-navigation';
+import { MobileNavigation } from '../features/workspace/mobile-navigation';
 import { Sidebar } from '../features/workspace/sidebar';
 import { RecordsView } from '../features/workspace/records-view';
 import { FieldsView } from '../features/workspace/fields-view';
@@ -38,6 +40,7 @@ export default function Workspace() {
     selectedWebhookId,
     focusRecord,
     currentUser,
+    sidebarCollapsed,
   } = useLoaderData<typeof loader>();
   const actionResult = useActionData<typeof action>();
   const navigation = useNavigation();
@@ -90,6 +93,7 @@ export default function Workspace() {
   return (
     <div className="workspace">
       <Sidebar
+        initiallyCollapsed={sidebarCollapsed}
         sections={sections}
         section={section}
         view={view}
@@ -99,115 +103,139 @@ export default function Workspace() {
 
       <main className="main" aria-busy={busy}>
         <header className="topbar">
+          <MobileNavigation
+            sections={sections}
+            section={section}
+            view={view}
+            admin={currentUser.role === 'admin'}
+            onOpenModal={setModal}
+          />
           <div className="breadcrumb">
-            Workspace
+            <span className="breadcrumb-root">{view === 'records' ? 'Workspace' : 'Settings'}</span>
             <ChevronRight size={14} />
             <span>{presentation.title}</span>
           </div>
           <div className="topbar-right">
-            <span className="secure-label">
-              <span className="status-dot" />
-              Secure workspace
-            </span>
             <MentionsBell />
             <span className="profile" title={currentUser.email}>
               {initials(currentUser.name, currentUser.email)}
             </span>
           </div>
         </header>
-        <div className="page">
-          <div className="page-title">
-            <div>
-              <div className="eyebrow">
-                {view === 'records' ? 'RELATIONSHIPS' : 'WORKSPACE SETTINGS'}
-              </div>
-              <h1>{presentation.title}</h1>
-              <p className="muted">{presentation.description}</p>
-            </div>
-            {presentation.actionLabel && (
-              <button className="primary" onClick={openPrimaryAction}>
-                <Plus size={18} />
-                {presentation.actionLabel}
-              </button>
-            )}
-          </div>
-          {busy && (
-            <p role="status" className="loading-message">
-              Updating workspace…
-            </p>
+        <div className={`page ${view !== 'records' ? 'settings-layout' : 'records-page'}`}>
+          {view !== 'records' && (
+            <SettingsNavigation view={view} admin={currentUser.role === 'admin'} />
           )}
-          {actionResult?.ok &&
-            actionResult.intent !== 'agent' &&
-            actionResult.intent !== 'invite' &&
-            !busy && (
-              <p role="status" className="success-message">
-                {actionMessages[actionResult.intent]}
+          <div className="workspace-content">
+            <div className="page-title">
+              <div>
+                {view !== 'records' && <div className="eyebrow">SETTINGS</div>}
+                <h1>{presentation.title}</h1>
+                {view !== 'records' && <p className="muted">{presentation.description}</p>}
+              </div>
+              {presentation.actionLabel && (
+                <button className="primary" onClick={openPrimaryAction}>
+                  <Plus size={18} />
+                  {presentation.actionLabel}
+                </button>
+              )}
+            </div>
+            {busy && (
+              <p role="status" className="loading-message">
+                Updating workspace…
               </p>
             )}
-          {error && (
-            <div role="alert" className="error-banner">
-              {error}
-            </div>
-          )}
-          {view === 'records' && (
-            <RecordsView
-              key={section.id}
-              section={section}
-              page={page}
-              canManage={currentUser.role === 'admin'}
-              onOpenRecord={openRecord}
-              onAddField={() => setModal('field')}
-              onDeleteRecord={(record) => {
-                setEditing(record);
-                setModal('delete');
-              }}
-            />
-          )}
-          {view === 'fields' && (
-            <FieldsView
-              sections={sections}
-              section={section}
-              onSelectSection={(identifier) => setParams({ view: 'fields', section: identifier })}
-              onAddField={() => setModal('field')}
-            />
-          )}
-          {view === 'team' && (
-            <TeamView
-              users={users}
-              invites={invites}
-              currentUserId={currentUser.id}
-              inviteLink={inviteLink}
-              busy={busy}
-              onDismissLink={() => setInviteLink('')}
-            />
-          )}
-          {view === 'agents' && (
-            <AgentsView
-              agents={agents}
-              sections={sections}
-              token={token}
-              busy={busy}
-              onDismissToken={() => setToken('')}
-              onCreateAgent={() => setModal('agent')}
-              onRevokeAgent={(agent) => {
-                setRevoke(agent);
-                setModal('revoke');
-              }}
-            />
-          )}
-          {view === 'webhooks' && (
-            <WebhooksView
-              endpoints={webhooks}
-              deliveries={deliveries}
-              sections={sections}
-              users={users}
-              agents={agents}
-              selectedId={selectedWebhookId}
-              createOpen={webhookEditor}
-              busy={busy}
-              onCreateOpenChange={setWebhookEditor}
-            />
-          )}
+            {actionResult?.ok &&
+              actionResult.intent !== 'agent' &&
+              actionResult.intent !== 'invite' &&
+              !busy && (
+                <p role="status" className="success-message">
+                  {actionMessages[actionResult.intent]}
+                </p>
+              )}
+            {error && (
+              <div role="alert" className="error-banner">
+                {error}
+              </div>
+            )}
+            {view === 'records' && (
+              <RecordsView
+                key={section.id}
+                section={section}
+                page={page}
+                canManage={currentUser.role === 'admin'}
+                onOpenRecord={openRecord}
+                onAddField={() => setModal('field')}
+                onDeleteRecord={(record) => {
+                  setEditing(record);
+                  setModal('delete');
+                }}
+              />
+            )}
+            {view === 'security' && (
+              <section className="account-settings" aria-label="Account security">
+                <div className="account-identity">
+                  <h2>Your account</h2>
+                  {currentUser.name && <p>{currentUser.name}</p>}
+                  <p className="muted">{currentUser.email}</p>
+                </div>
+                <div className="security-setting">
+                  <div>
+                    <h2>Password</h2>
+                    <p className="muted">Changing your password signs you out on all devices.</p>
+                  </div>
+                  <button className="secondary" onClick={() => setModal('password')}>
+                    Change password
+                  </button>
+                </div>
+              </section>
+            )}
+            {view === 'fields' && (
+              <FieldsView
+                sections={sections}
+                section={section}
+                onSelectSection={(identifier) => setParams({ view: 'fields', section: identifier })}
+                onAddField={() => setModal('field')}
+              />
+            )}
+            {view === 'team' && (
+              <TeamView
+                users={users}
+                invites={invites}
+                currentUserId={currentUser.id}
+                inviteLink={inviteLink}
+                busy={busy}
+                onDismissLink={() => setInviteLink('')}
+              />
+            )}
+            {view === 'agents' && (
+              <AgentsView
+                agents={agents}
+                sections={sections}
+                token={token}
+                busy={busy}
+                onDismissToken={() => setToken('')}
+                onCreateAgent={() => setModal('agent')}
+                onRevokeAgent={(agent) => {
+                  setRevoke(agent);
+                  setModal('revoke');
+                }}
+              />
+            )}
+            {view === 'webhooks' && (
+              <WebhooksView
+                endpoints={webhooks}
+                deliveries={deliveries}
+                sections={sections}
+                users={users}
+                agents={agents}
+                selectedId={selectedWebhookId}
+                createOpen={webhookEditor}
+                busy={busy}
+                onCreateOpenChange={setWebhookEditor}
+              />
+            )}
+          </div>
         </div>
       </main>
       <WorkspaceDialogs

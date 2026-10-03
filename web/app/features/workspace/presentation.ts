@@ -2,6 +2,13 @@ import type { ModalKind, Section, WorkspaceView } from '../../types/crm';
 
 const recordLabels: Record<string, string> = { clients: 'client', prospects: 'prospect' };
 export function viewPresentation(view: WorkspaceView, section: Section) {
+  if (view === 'security')
+    return {
+      title: 'Security',
+      description: 'Manage access to your account.',
+      actionLabel: '',
+      actionModal: 'password' as ModalKind,
+    };
   if (view === 'agents')
     return {
       title: 'Agent access',
