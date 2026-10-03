@@ -19,10 +19,19 @@ type Field struct {
 	Type     FieldType `json:"type"`
 	Required bool      `json:"required"`
 }
+
+// SectionView is a section-level item screen setting, separate from record data.
+type SectionView struct {
+	ID      string         `json:"id"`
+	Enabled bool           `json:"enabled"`
+	Config  map[string]any `json:"config"`
+}
+
 type Section struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"name"`
-	Fields []Field `json:"fields"`
+	ID     string        `json:"id"`
+	Name   string        `json:"name"`
+	Fields []Field       `json:"fields"`
+	Views  []SectionView `json:"views"`
 }
 type Record struct {
 	ID        string         `json:"id"`
@@ -33,6 +42,7 @@ type Permission struct {
 	SectionID string `json:"section_id"`
 	Read      bool   `json:"read"`
 	Write     bool   `json:"write"`
+	Delete    bool   `json:"delete"`
 }
 type Agent struct {
 	ID           string       `json:"id"`
@@ -73,12 +83,13 @@ type CreatedInvite struct {
 	Token string `json:"token"`
 }
 
-// Access distinguishes independent read and write grants; write does not imply read.
+// Access distinguishes record operations. Write requires read; delete requires both.
 type Access int
 
 const (
 	ReadAccess Access = iota
 	WriteAccess
+	DeleteAccess
 )
 
 // MaxPageSize is the largest record page agents and the repository will return.

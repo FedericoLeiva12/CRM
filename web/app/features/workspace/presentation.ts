@@ -32,8 +32,8 @@ export function viewPresentation(view: WorkspaceView, section: Section) {
     };
   if (view === 'fields')
     return {
-      title: 'Fields & sections',
-      description: 'Shape your workspace around the way you work.',
+      title: 'Sections',
+      description: 'Manage fields and item views for each section.',
       actionLabel: 'Add section',
       actionModal: 'section' as ModalKind,
     };

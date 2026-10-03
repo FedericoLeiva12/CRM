@@ -424,6 +424,16 @@ func lockComment(ctx context.Context, tx pgx.Tx, commentID string) (commentRow, 
 // EditComment changes a comment's text. Only its author may edit. The mention set becomes the
 // @handles in the new text plus any explicit ids; people newly mentioned are notified once.
 func (repository *Repository) EditComment(ctx context.Context, actor, commentID, body string, mentions []string) (CommentResult, error) {
+	return repository.editComment(ctx, actor, "", commentID, body, mentions)
+}
+
+// EditSectionComment binds an agent operation to its authorized section inside the
+// transaction. A comment ID from another section cannot bypass the tool's grant.
+func (repository *Repository) EditSectionComment(ctx context.Context, actor, sectionID, commentID, body string, mentions []string) (CommentResult, error) {
+	return repository.editComment(ctx, actor, sectionID, commentID, body, mentions)
+}
+
+func (repository *Repository) editComment(ctx context.Context, actor, sectionID, commentID, body string, mentions []string) (CommentResult, error) {
 	body, err := domain.ValidateCommentBody(body)
 	if err != nil {
 		return CommentResult{}, err
@@ -444,6 +454,9 @@ func (repository *Repository) EditComment(ctx context.Context, actor, commentID,
 	row, err := lockComment(ctx, transaction, commentID)
 	if err != nil {
 		return CommentResult{}, err
+	}
+	if sectionID != "" && row.sectionID != sectionID {
+		return CommentResult{}, ErrNotFound
 	}
 	if row.authorKind != author.Kind || row.authorID != author.ID {
 		return CommentResult{}, ErrForbidden
@@ -516,6 +529,16 @@ func (repository *Repository) EditComment(ctx context.Context, actor, commentID,
 // DeleteComment removes a comment. Its author may delete it, and so may an administrator.
 // A top-level comment that still has replies stays as a tombstone so the thread keeps its place.
 func (repository *Repository) DeleteComment(ctx context.Context, actor, commentID string) error {
+	return repository.deleteComment(ctx, actor, "", commentID)
+}
+
+// DeleteSectionComment applies the same author/tombstone rules as the browser and
+// requires the locked comment to belong to the section authorized by the MCP tool.
+func (repository *Repository) DeleteSectionComment(ctx context.Context, actor, sectionID, commentID string) error {
+	return repository.deleteComment(ctx, actor, sectionID, commentID)
+}
+
+func (repository *Repository) deleteComment(ctx context.Context, actor, sectionID, commentID string) error {
 	author, err := authorFromActor(actor)
 	if err != nil {
 		return err
@@ -528,6 +551,9 @@ func (repository *Repository) DeleteComment(ctx context.Context, actor, commentI
 	row, err := lockComment(ctx, transaction, commentID)
 	if err != nil {
 		return err
+	}
+	if sectionID != "" && row.sectionID != sectionID {
+		return ErrNotFound
 	}
 	if row.authorKind != author.Kind || row.authorID != author.ID {
 		var role string

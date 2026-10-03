@@ -1,4 +1,15 @@
 import { redirect } from '@remix-run/node';
+
+export class APIError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'APIError';
+  }
+}
+
 export async function api<T = unknown>(request: Request, path: string, options: RequestInit = {}) {
   const response = await fetch(`${process.env.API_URL || 'http://localhost:8080'}/api${path}`, {
     ...options,
@@ -12,7 +23,8 @@ export async function api<T = unknown>(request: Request, path: string, options: 
   if (response.status === 401) throw redirect('/login');
   const data: unknown = await response.json();
   if (!response.ok)
-    throw new Error(
+    throw new APIError(
+      response.status,
       typeof data === 'object' && data !== null && 'error' in data
         ? String(data.error)
         : 'Request failed',

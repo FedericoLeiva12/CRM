@@ -23,10 +23,12 @@ type mentionsListArguments struct {
 	Limit      *int `json:"limit,omitempty" jsonschema:"Maximum mentions to return, 1-500. Default 100."`
 }
 type mentionsMarkReadArguments struct {
-	IDs []string `json:"ids" jsonschema:"Mention ids from mentions_list"`
+	IDs []string `json:"ids,omitempty" jsonschema:"Mention ids from mentions_list; omit when all is true"`
+	All bool     `json:"all,omitempty" jsonschema:"Mark all of this agent's mentions as read"`
 }
 
 func (handler *Handler) registerCommentWriteTool(server *mcp.Server, agentID string, section domain.Section) {
+	handler.registerCommentMutationTools(server, agentID, section)
 	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_comment", Description: "Add a comment to a record in " + section.Name + ", or reply to one with parent_id. @handle in the body mentions a team member or an agent that can read this section; mentioned principals are notified. Returns the comment and unresolved_mentions (handles or ids that matched nobody or cannot read this section)."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments commentArguments) (*mcp.CallToolResult, any, error) {
 		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.WriteAccess) {
 			return nil, nil, errPermissionDenied
@@ -35,15 +37,12 @@ func (handler *Handler) registerCommentWriteTool(server *mcp.Server, agentID str
 		if err != nil {
 			return nil, nil, toolError(err)
 		}
-		unresolved := result.UnresolvedMentions
-		if unresolved == nil {
-			unresolved = []string{}
-		}
-		return nil, map[string]any{"comment": result.Comment, "unresolved_mentions": unresolved}, nil
+		return nil, commentToolPayload(result), nil
 	})
 }
 
 func (handler *Handler) registerCommentReadTool(server *mcp.Server, agentID string, section domain.Section) {
+	handler.registerMentionCandidatesTool(server, agentID, section)
 	mcp.AddTool(server, &mcp.Tool{Name: section.ID + "_comments", Description: "List comments on a record in " + section.Name + ": top-level comments newest first, each with its replies oldest first. Pass next_cursor back as cursor for the next page."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments commentsArguments) (*mcp.CallToolResult, any, error) {
 		if !handler.repository.CanAccess(ctx, agentID, section.ID, domain.ReadAccess) {
 			return nil, nil, errPermissionDenied
@@ -83,8 +82,8 @@ func (handler *Handler) registerMentionTools(server *mcp.Server, agentID string)
 		}
 		return nil, map[string]any{"mentions": mentions, "unread_count": unread}, nil
 	})
-	mcp.AddTool(server, &mcp.Tool{Name: "mentions_mark_read", Description: "Mark this agent's own mentions as read. Ids that belong to someone else or are already read are ignored. Returns how many changed."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments mentionsMarkReadArguments) (*mcp.CallToolResult, any, error) {
-		marked, err := handler.repository.MarkMentionsRead(ctx, domain.PrincipalAgent, agentID, arguments.IDs, false)
+	mcp.AddTool(server, &mcp.Tool{Name: "mentions_mark_read", Description: "Mark this agent's own mentions as read by ids, or all=true. Ids that belong to someone else or are already read are ignored. Returns how many changed."}, func(ctx context.Context, _ *mcp.CallToolRequest, arguments mentionsMarkReadArguments) (*mcp.CallToolResult, any, error) {
+		marked, err := handler.repository.MarkMentionsRead(ctx, domain.PrincipalAgent, agentID, arguments.IDs, arguments.All)
 		if err != nil {
 			return nil, nil, toolError(err)
 		}

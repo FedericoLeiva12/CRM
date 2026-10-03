@@ -44,10 +44,12 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 	server := mcp.NewServer(&mcp.Implementation{Name: "sira-crm", Version: "1.0.0"}, nil)
 	handler.registerSchemaTool(server, agentID)
 	handler.registerMentionTools(server, agentID)
+	handler.registerItemViewCatalogTool(server)
 	// Schema tools are registered from the current grant. The next request rebuilds the list,
 	// and AddTool emits notifications/tools/list_changed for a connected session.
 	if handler.repository.CanManageSchema(request.Context(), agentID) {
 		handler.registerSchemaManagementTools(server, agentID)
+		handler.registerItemViewManagementTool(server, agentID)
 	}
 	for _, section := range sections {
 		canRead := handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.ReadAccess)
@@ -57,6 +59,9 @@ func (handler *Handler) ServeHTTP(writer http.ResponseWriter, request *http.Requ
 		}
 		if canWrite {
 			handler.registerWriteTools(server, agentID, section)
+		}
+		if handler.repository.CanAccess(request.Context(), agentID, section.ID, domain.DeleteAccess) {
+			handler.registerDeleteTool(server, agentID, section)
 		}
 		// Conversion needs read and write on the source. Target write is checked when the tool runs.
 		if canRead && canWrite {
@@ -85,14 +90,15 @@ func toolError(err error) error {
 	return errors.New("unable to complete this operation")
 }
 func (handler *Handler) registerSchemaTool(server *mcp.Server, agentID string) {
-	mcp.AddTool(server, &mcp.Tool{Name: "sections_schema", Description: "Field definitions for sections this agent may access"}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
+	mcp.AddTool(server, &mcp.Tool{Name: "sections_schema", Description: "Section schemas and item view settings; schema managers see all section definitions, without record data"}, func(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, any, error) {
 		sections, err := handler.repository.ListSections(ctx)
 		if err != nil {
 			return nil, nil, toolError(err)
 		}
+		canManageSchema := handler.repository.CanManageSchema(ctx, agentID)
 		accessible := []domain.Section{}
 		for _, section := range sections {
-			if handler.repository.CanAccess(ctx, agentID, section.ID, domain.ReadAccess) || handler.repository.CanAccess(ctx, agentID, section.ID, domain.WriteAccess) {
+			if canManageSchema || handler.repository.CanAccess(ctx, agentID, section.ID, domain.ReadAccess) || handler.repository.CanAccess(ctx, agentID, section.ID, domain.WriteAccess) {
 				accessible = append(accessible, section)
 			}
 		}

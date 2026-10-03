@@ -807,18 +807,19 @@ tbody tr:hover {
 .permissions-header,
 .permission-row {
   display: grid;
-  grid-template-columns: 1fr 80px 80px;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 64px);
+  column-gap: 4px;
   align-items: center;
   padding: 14px 0;
   border-bottom: 1px solid #e3e9e4;
 }
 .permissions-header {
-  color: #6d7c72;
+  color: #526c58;
   font-size: 12px;
 }
 .checkbox {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border: 1px solid #b8c8bc;
   border-radius: 4px;
   background: white;
@@ -1271,7 +1272,7 @@ tbody tr:hover {
   }
   .permissions-header,
   .permission-row {
-    grid-template-columns: 1fr 55px 55px;
+    grid-template-columns: minmax(0, 1fr) repeat(3, 44px);
   }
   .checkbox {
     width: 28px;
@@ -1984,7 +1985,7 @@ input::placeholder {
   }
 }
 
-/* Settings use a separate navigation column so workspace sections stay prominent. */
+/* Settings categories share one registry with the section navigation and role checks. */
 .sidebar .settings-entry {
   margin-top: auto;
 }
@@ -1995,25 +1996,59 @@ input::placeholder {
   margin-top: 0;
 }
 .settings-layout {
-  display: grid;
-  grid-template-columns: 190px minmax(0, 1fr);
-  gap: 38px;
+  width: 100%;
 }
 .workspace-content {
   min-width: 0;
 }
-.settings-navigation h2 {
-  font-size: 22px;
-  margin: 0 0 30px;
+.settings-heading {
+  font-size: 30px;
+  margin-bottom: 20px;
 }
-.settings-group + .settings-group {
-  margin-top: 26px;
+.settings-category-tabs {
+  display: flex;
+  gap: 28px;
+  border-bottom: 1px solid #dce5df;
+  margin-bottom: 32px;
+  overflow-x: auto;
 }
-.settings-group h3 {
-  font-size: 13px;
-  font-weight: 600;
+.settings-category-tabs button {
+  flex-shrink: 0;
+  min-height: 48px;
+  padding: 10px 2px;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
   color: #53685b;
-  margin-bottom: 9px;
+  font-size: 14px;
+}
+.settings-category-tabs button[data-state='active'] {
+  color: #14533d;
+  border-bottom-color: #176b55;
+  font-weight: 600;
+}
+.settings-category-tabs button:hover {
+  color: #14533d;
+}
+.settings-category-tabs button:focus-visible {
+  outline: 2px solid #176b55;
+  outline-offset: -4px;
+}
+.settings-category-panel:focus-visible {
+  outline: 2px solid #176b55;
+  outline-offset: 6px;
+}
+.settings-body {
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 32px;
+}
+.settings-body > .workspace-content {
+  container: settings-content / inline-size;
+}
+.settings-section-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 .settings-link {
   display: flex;
@@ -2038,8 +2073,8 @@ input::placeholder {
   outline: 2px solid #176b55;
   outline-offset: 2px;
 }
-.settings-mobile-nav {
-  display: none;
+.settings-layout .page-title h2 {
+  font-size: 26px;
 }
 .account-settings h2 {
   font-size: 17px;
@@ -2086,34 +2121,82 @@ input::placeholder {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-@media (max-width: 1100px) {
-  .settings-layout {
-    display: block;
+/* Reflow settings by their usable width, which also depends on both sidebars. */
+@container settings-content (max-width: 650px) {
+  .invite-form,
+  .person-row,
+  .role-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
   }
-  .settings-navigation {
-    margin-bottom: 28px;
+  .role-form select,
+  .invite-form button,
+  .person-row .danger-text,
+  .role-form button {
+    width: 100%;
   }
-  .settings-navigation h2 {
-    margin-bottom: 16px;
+  .security-setting,
+  .agent-save,
+  .schema-permission,
+  .webhook-card .panel-heading {
+    flex-direction: column;
+    align-items: flex-start;
   }
-  .settings-desktop-nav {
+  .permissions-header,
+  .permission-row {
+    grid-template-columns: minmax(0, 1fr) repeat(3, 44px);
+  }
+  .agent-intro code {
     display: none;
   }
-  .settings-mobile-nav {
-    display: block;
+  .webhook-facts {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
-  .settings-mobile-nav label {
-    display: block;
-    font-size: 13px;
-    margin-bottom: 8px;
+  .webhook-facts dd {
+    margin-bottom: 10px;
   }
-  .settings-mobile-nav select {
-    width: 100%;
-    min-height: 44px;
+  .webhook-url {
+    white-space: normal;
+  }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .settings-body {
+    grid-template-columns: 148px minmax(0, 1fr);
+    gap: 24px;
   }
 }
 
 @media (max-width: 760px) {
+  .settings-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .settings-body > .workspace-content {
+    container: settings-content / inline-size;
+  }
+  .settings-section-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-category-tabs {
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .settings-heading {
+    font-size: 29px;
+    margin-bottom: 12px;
+  }
+  .settings-layout .page-title h2 {
+    font-size: 24px;
+  }
   .security-setting {
     align-items: flex-start;
     flex-direction: column;
@@ -2488,4 +2571,289 @@ input::placeholder {
 .records-page .table-wrap {
   flex: 1;
   min-height: 240px;
+}
+
+/* Item detail is a full screen. View plugins share this frame and their own content. */
+.item-detail {
+  max-width: 1120px;
+}
+.item-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 44px;
+  font-size: 14px;
+  color: #45634f;
+  margin: -12px 0 16px;
+}
+.item-detail-title {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 24px;
+  margin-bottom: 32px;
+}
+.item-detail-title h1 {
+  overflow-wrap: anywhere;
+}
+.item-detail-title p {
+  margin-top: 8px;
+  font-size: 14px;
+}
+.item-updated {
+  color: #5f7065;
+  font-size: 13px;
+  white-space: nowrap;
+  padding-bottom: 4px;
+}
+.item-tabs {
+  display: flex;
+  gap: 26px;
+  border-bottom: 1px solid #dce5df;
+  margin-bottom: 28px;
+  overflow-x: auto;
+}
+.item-tabs button {
+  min-height: 48px;
+  padding: 10px 2px;
+  border-radius: 0;
+  font-size: 14px;
+  color: #576d5e;
+  border-bottom: 2px solid transparent;
+  flex-shrink: 0;
+}
+.item-tabs button[data-state='active'] {
+  color: #14533d;
+  border-bottom-color: #176b55;
+  font-weight: 600;
+}
+.item-tab-panel:focus-visible {
+  outline: 2px solid #176b55;
+  outline-offset: 8px;
+}
+.item-view-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid #dce5df;
+}
+.item-view-heading h2 {
+  font-size: 19px;
+}
+.item-view-heading button {
+  min-height: 44px;
+}
+.item-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: 48px;
+  margin: 0;
+}
+.item-fields > div {
+  padding: 24px 0;
+  border-bottom: 1px solid #e0e7e2;
+  min-width: 0;
+}
+.item-fields dt {
+  color: #576d5e;
+  font-size: 13px;
+  margin-bottom: 9px;
+}
+.item-fields dd {
+  margin: 0;
+  font-size: 16px;
+  color: #253e30;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.item-fields .item-field-wide {
+  grid-column: 1 / -1;
+}
+.item-edit-form {
+  margin-top: 24px;
+}
+.item-edit-form fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.item-edit-form label,
+.view-config-fields label {
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+}
+.item-edit-form input:not([type='checkbox']),
+.item-edit-form textarea {
+  margin-top: 9px;
+}
+.item-edit-form input[type='checkbox'] {
+  margin-left: 12px;
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+.item-edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 24px;
+}
+.item-detail .record-history {
+  margin-top: 0;
+  border-top: 0;
+  padding-top: 0;
+}
+.section-settings-panels {
+  min-width: 0;
+}
+.section-settings-tab[data-state='inactive'] {
+  display: none;
+}
+.section-settings-tab:focus-visible {
+  outline: 2px solid #176b55;
+  outline-offset: 8px;
+}
+.section-views .panel-heading p {
+  font-size: 14px;
+  line-height: 1.5;
+  margin-top: 8px;
+}
+.configured-view {
+  padding: 20px 0;
+  border-bottom: 1px solid #e0e7e2;
+}
+.configured-view-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+}
+.configured-view h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.configured-view p {
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 55ch;
+}
+.configured-view-actions {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  flex-shrink: 0;
+}
+.configured-view-actions .inline-label {
+  min-height: 44px;
+  font-size: 14px;
+  gap: 8px;
+}
+.configured-view-actions .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.required-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  font-size: 13px;
+  color: #47624f;
+}
+.add-item-view {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 24px;
+}
+.add-item-view label {
+  font-size: 14px;
+  flex: 1;
+  max-width: 320px;
+}
+.add-item-view select {
+  width: 100%;
+  min-height: 44px;
+  margin-top: 8px;
+}
+.add-item-view button {
+  min-height: 44px;
+}
+.section-view-save {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+.view-config-fields label {
+  margin-top: 20px;
+}
+.view-config-fields input,
+.view-config-fields textarea {
+  width: 100%;
+  margin-top: 8px;
+}
+.view-config-fields textarea {
+  min-height: 140px;
+}
+@media (max-width: 760px) {
+  .item-detail-title {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  .item-detail-title h1 {
+    font-size: 28px;
+  }
+  .item-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .configured-view-heading {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .configured-view-actions {
+    align-items: center;
+  }
+  .add-item-view {
+    flex-wrap: wrap;
+  }
+  .add-item-view label {
+    min-width: 150px;
+  }
+}
+
+@media (max-width: 760px) {
+  .item-edit-actions {
+    position: sticky;
+    bottom: 0;
+    padding: 16px 0;
+    background: #f8faf9;
+    border-top: 1px solid #dce5df;
+  }
+}
+
+.permission-row > span {
+  overflow-wrap: anywhere;
+}
+.permission-row .checkbox {
+  width: 24px;
+  height: 24px;
+}
+.checkbox:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+@media (max-width: 760px) {
+  .permission-row .checkbox,
+  .schema-permission .checkbox {
+    width: 44px;
+    height: 44px;
+  }
 }

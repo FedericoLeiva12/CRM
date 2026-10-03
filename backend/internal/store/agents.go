@@ -14,15 +14,21 @@ func (repository *Repository) AgentForToken(ctx context.Context, bearerToken str
 	return agentID, classifyMissingRow(err)
 }
 func (repository *Repository) CanAccess(ctx context.Context, agentID, sectionID string, access domain.Access) bool {
-	var canRead, canWrite bool
-	err := repository.pool.QueryRow(ctx, "SELECT p.can_read,p.can_write FROM permissions p JOIN agents a ON a.id=p.agent_id WHERE a.id=$1 AND p.section_id=$2", agentID, sectionID).Scan(&canRead, &canWrite)
+	var canRead, canWrite, canDelete bool
+	err := repository.pool.QueryRow(ctx, "SELECT p.can_read,p.can_write,p.can_delete FROM permissions p JOIN agents a ON a.id=p.agent_id WHERE a.id=$1 AND p.section_id=$2", agentID, sectionID).Scan(&canRead, &canWrite, &canDelete)
 	if err != nil {
 		return false
 	} // Missing grants and database failures both deny access.
-	if access == domain.WriteAccess {
-		return canWrite
+	switch access {
+	case domain.ReadAccess:
+		return canRead
+	case domain.WriteAccess:
+		return canWrite && canRead
+	case domain.DeleteAccess:
+		return canDelete && canWrite && canRead
+	default:
+		return false
 	}
-	return canRead
 }
 
 // CanManageSchema is independent of section read and write. Missing agents and database failures deny access.
@@ -64,7 +70,7 @@ func (repository *Repository) ListAgents(ctx context.Context) ([]domain.Agent, e
 }
 func (repository *Repository) agentPermissions(ctx context.Context, agentID string) ([]domain.Permission, error) {
 	// Derive rows from sections, not grants, so newly added sections appear immediately.
-	rows, err := repository.pool.Query(ctx, `SELECT s.id,coalesce(p.can_read,false),coalesce(p.can_write,false)
+	rows, err := repository.pool.Query(ctx, `SELECT s.id,coalesce(p.can_read,false),coalesce(p.can_write,false),coalesce(p.can_delete,false)
  FROM sections s LEFT JOIN permissions p ON p.section_id=s.id AND p.agent_id=$1 ORDER BY s.created_at,s.id`, agentID)
 	if err != nil {
 		return nil, err
@@ -73,7 +79,7 @@ func (repository *Repository) agentPermissions(ctx context.Context, agentID stri
 	permissions := []domain.Permission{}
 	for rows.Next() {
 		var permission domain.Permission
-		if err = rows.Scan(&permission.SectionID, &permission.Read, &permission.Write); err != nil {
+		if err = rows.Scan(&permission.SectionID, &permission.Read, &permission.Write, &permission.Delete); err != nil {
 			return nil, err
 		}
 		permissions = append(permissions, permission)
@@ -104,17 +110,24 @@ func (repository *Repository) RevokeAgent(ctx context.Context, agentID string) e
 	return nil
 }
 func (repository *Repository) SetPermissions(ctx context.Context, agentID string, permissions []domain.Permission, manageSchema bool) error {
+	if err := domain.ValidatePermissions(permissions); err != nil {
+		return err
+	}
 	transaction, err := repository.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = transaction.Rollback(ctx) }()
-	if _, err = transaction.Exec(ctx, "UPDATE agents SET can_manage_schema=$2 WHERE id=$1", agentID, manageSchema); err != nil {
+	result, err := transaction.Exec(ctx, "UPDATE agents SET can_manage_schema=$2 WHERE id=$1", agentID, manageSchema)
+	if err != nil {
 		return err
 	}
+	if result.RowsAffected() == 0 {
+		return ErrNotFound
+	}
 	for _, permission := range permissions {
-		_, err = transaction.Exec(ctx, `INSERT INTO permissions(agent_id,section_id,can_read,can_write) VALUES($1,$2,$3,$4)
- ON CONFLICT(agent_id,section_id) DO UPDATE SET can_read=excluded.can_read,can_write=excluded.can_write`, agentID, permission.SectionID, permission.Read, permission.Write)
+		_, err = transaction.Exec(ctx, `INSERT INTO permissions(agent_id,section_id,can_read,can_write,can_delete) VALUES($1,$2,$3,$4,$5)
+ ON CONFLICT(agent_id,section_id) DO UPDATE SET can_read=excluded.can_read,can_write=excluded.can_write,can_delete=excluded.can_delete`, agentID, permission.SectionID, permission.Read, permission.Write, permission.Delete)
 		if err != nil {
 			return classifyDatabaseError(err)
 		}

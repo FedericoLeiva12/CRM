@@ -30,6 +30,8 @@ func (server *Server) Handler() http.Handler {
 	router.HandleFunc("POST /api/password", server.requireSession(server.changePassword))
 	router.HandleFunc("GET /api/me", server.requireSession(server.currentUser))
 	router.HandleFunc("GET /api/sections", server.requireSession(server.listSections))
+	router.HandleFunc("GET /api/item-view-types", server.requireSession(server.itemViewCatalog))
+	router.HandleFunc("PUT /api/sections/{section}/views", server.requireAdmin(server.configureItemViews))
 	router.HandleFunc("POST /api/sections", server.requireAdmin(server.createSection))
 	router.HandleFunc("POST /api/sections/{section}/fields", server.requireAdmin(server.addField))
 	router.HandleFunc("GET /api/sections/{section}/records", server.requireSession(server.listRecords))
