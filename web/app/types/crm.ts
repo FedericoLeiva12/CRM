@@ -111,7 +111,7 @@ export interface CreatedInvite extends Invite {
   token: string;
   link: string;
 }
-export type WorkspaceView = 'records' | 'fields' | 'agents' | 'team' | 'webhooks';
+export type WorkspaceView = 'records' | 'fields' | 'agents' | 'team' | 'webhooks' | 'security';
 export type ModalKind = 'record' | 'field' | 'section' | 'agent' | 'delete' | 'revoke' | 'password';
 export interface WebhookActorRef {
   kind: 'user' | 'agent';
